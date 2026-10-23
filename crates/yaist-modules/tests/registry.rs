@@ -105,6 +105,8 @@ fn every_action_teaches_its_terminal_command() {
                     "timezone" => "UTC",
                     "project" => "games",
                     "app" => "org.videolan.VLC",
+                    "address" => "192.168.1.20",
+                    "uri" => "ipp://printer.local/ipp/print",
                     _ => "example",
                 },
             };
@@ -116,7 +118,10 @@ fn every_action_teaches_its_terminal_command() {
             assert!(!cmds.is_empty(), "{} has no terminal equivalent", spec.id);
             if spec.risk != Risk::Read {
                 // Root changes show sudo; per-user Flatpak changes need none.
-                let shows = cmds.iter().any(|c| c.starts_with("sudo ") || c.starts_with("flatpak ") || c.starts_with("# "));
+                // Root changes show sudo; per-user ones (Flatpak, printing
+                // your own jobs) need none.
+                let user_level = ["flatpak ", "# ", "lp ", "cancel "];
+                let shows = cmds.iter().any(|c| c.starts_with("sudo ") || user_level.iter().any(|p| c.starts_with(p)));
                 assert!(shows, "{}: a change should show the sudo (or flatpak --user) command", spec.id);
             }
         }

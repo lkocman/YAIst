@@ -129,6 +129,24 @@ pub fn flatpak_app(s: &str) -> R {
     Ok(())
 }
 
+/// A CUPS device URI: `ipp://printer.local/ipp/print`, `usb://HP/...`,
+/// `hp:/usb/...`, `socket://10.0.0.5`.
+pub fn printer_uri(s: &str) -> R {
+    let schemes = ["ipp://", "ipps://", "http://", "https://", "socket://", "lpd://", "usb://", "hp:/", "dnssd://", "ippusb://"];
+    if !schemes.iter().any(|p| s.starts_with(p)) || s.chars().any(|c| c.is_whitespace() || c.is_control()) || s.len() > 1024 {
+        return Err("expected a printer URI such as ipp://printer.local/ipp/print".into());
+    }
+    Ok(())
+}
+
+/// What hp-setup accepts: an IP address, a hostname or a USB serial number.
+pub fn hp_address(s: &str) -> R {
+    if s.starts_with('-') || s.is_empty() || s.len() > 253 || !chars_ok(s, ".-:_") {
+        return Err("expected an IP address, a hostname or the printer's serial number".into());
+    }
+    Ok(())
+}
+
 /// A Leap release such as `16.1`.
 pub fn release_version(s: &str) -> R {
     match s.split_once('.') {

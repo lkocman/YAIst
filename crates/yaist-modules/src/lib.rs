@@ -6,6 +6,7 @@ mod flatpak;
 mod helper;
 mod media;
 mod packages;
+mod printers;
 mod repos;
 mod selinux;
 mod services;
@@ -31,6 +32,7 @@ pub fn registry() -> Registry {
     packages::register(&mut reg);
     repos::register(&mut reg);
     media::register(&mut reg);
+    printers::register(&mut reg);
     snapshots::register(&mut reg);
     upgrade::register(&mut reg);
     reg

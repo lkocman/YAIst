@@ -24,7 +24,8 @@ questions to try, the system at a glance and links into the community.
 System (hostname, time zone, NTP), Users, Services (systemd), Firewall
 (firewalld), SELinux, Packages and Repositories (zypper, OBS community
 repositories and Flatpak remotes), Gaming & media (Steam, graphics drivers,
-SELinux gaming policy, codecs), Snapshots (snapper: compare, create, roll back) and Upgrade
+SELinux gaming policy, codecs), Printers (CUPS, driverless IPP, HP devices
+through HPLIP, like YaST's printer module), Snapshots (snapper: compare, create, roll back) and Upgrade
 (Tumbleweed/Slowroll: `zypper dup`; Leap: move to a newer release with the
 repositories switched to it, like opensuse-migration-tool).
 
