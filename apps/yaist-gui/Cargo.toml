@@ -12,6 +12,8 @@ yaist-ui = { workspace = true }
 serde_json = { workspace = true }
 eframe = { workspace = true }
 egui = { workspace = true }
+# Distribution logos are SVG files installed by distribution-logos-openSUSE-*.
+egui_extras = { workspace = true, features = ["svg", "file"] }
 
 [features]
 default = ["bundled-fonts"]

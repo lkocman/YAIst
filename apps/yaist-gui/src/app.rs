@@ -184,7 +184,16 @@ impl App {
             ui.add_space(18.0);
             widgets::tag(ui, "System", t.invert_bg, t.invert_fg);
             ui.add_space(12.0);
-            widgets::hud(ui, &v.distro, t.muted);
+            match welcome::distribution_logo(welcome::LOGO_INLINE) {
+                Some(uri) => {
+                    ui.add(egui::Image::new(uri).max_height(20.0).tint(t.ink_strong)).on_hover_text(&v.distro);
+                    ui.add_space(8.0);
+                    widgets::hud(ui, &v.distro_info.version, t.muted);
+                }
+                None => {
+                    widgets::hud(ui, &v.distro, t.muted);
+                }
+            }
             ui.add_space(16.0);
             self.update_badge(ui, v);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -445,7 +454,11 @@ impl App {
                 crate::art::chameleon(ui.painter(), rect, &t);
                 ui.add_space(20.0);
                 ui.vertical(|ui| {
-                    ui.add_space(42.0);
+                    ui.add_space(30.0);
+                    if let Some(uri) = welcome::distribution_logo(welcome::LOGO_SQUARE) {
+                        ui.add(egui::Image::new(uri).fit_to_exact_size(vec2(56.0, 56.0))).on_hover_text(&v.distro);
+                        ui.add_space(10.0);
+                    }
                     widgets::hud(ui, "Welcome to", t.muted);
                     ui.add_space(4.0);
                     let name = if d.pretty.is_empty() { "openSUSE".to_owned() } else { d.pretty.clone() };

@@ -4,6 +4,22 @@
 
 use yaist_core::Distro;
 
+/// Every openSUSE flavour installs its logos here, under the same file names
+/// (distribution-logos-openSUSE-*). They are loaded from the system, not
+/// shipped with yAIst.
+const LOGO_DIR: &str = "/usr/share/pixmaps/distribution-logos";
+
+/// The colour square logo, for the welcome screen.
+pub const LOGO_SQUARE: &str = "square-hicolor.svg";
+/// The monochrome wordmark (e.g. "◇ Leap"), for the header; tint it.
+pub const LOGO_INLINE: &str = "light-inline.svg";
+
+/// A `file://` URI for one of the system's distribution logos, if installed.
+pub fn distribution_logo(file: &str) -> Option<String> {
+    let path = std::path::Path::new(LOGO_DIR).join(file);
+    path.is_file().then(|| format!("file://{}", path.display()))
+}
+
 /// How this system takes changes, shown under the welcome title:
 /// (label, explanation).
 pub fn mode(d: &Distro) -> (&'static str, &'static str) {

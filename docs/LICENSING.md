@@ -36,7 +36,7 @@ time of writing (x86_64 Linux target, normal dependencies only):
 | Binary | Crates linked | Suggested `License:` |
 |---|---|---|
 | `yaist` (TUI and CLI) | 164 | `Apache-2.0 AND BSD-3-Clause AND ISC AND MIT AND Unicode-3.0 AND Zlib` |
-| `yaist-gui` | 263 | `Apache-2.0 AND BSD-3-Clause AND ISC AND MIT AND OFL-1.1 AND Unicode-3.0 AND Zlib` |
+| `yaist-gui` | 287 | `Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND OFL-1.1 AND Unicode-3.0 AND Zlib` |
 
 - **No copyleft is forced.** Two crates offer a copyleft licence as one `OR`
   choice: `r-efi` (`MIT OR Apache-2.0 OR LGPL-2.1-or-later`) and `self_cell`
@@ -68,7 +68,7 @@ the vendored tree, pass `--offline`.
 License:        Apache-2.0 AND BSD-3-Clause AND ISC AND MIT AND Unicode-3.0 AND Zlib
 ...
 %package gui
-License:        Apache-2.0 AND BSD-3-Clause AND ISC AND MIT AND OFL-1.1 AND Unicode-3.0 AND Zlib
+License:        Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND OFL-1.1 AND Unicode-3.0 AND Zlib
 ```
 
 ## Compatibility with what yAIst talks to
@@ -82,6 +82,15 @@ License:        Apache-2.0 AND BSD-3-Clause AND ISC AND MIT AND OFL-1.1 AND Unic
   binding lands, and record it in the spec's `License:`.
 - **GPL-2.0-only code cannot be linked** into an Apache-2.0 program; keep it
   out of the dependency tree (`deny.toml` already rejects it).
+
+## Not part of yAIst: distribution logos
+
+The header wordmark and the welcome screen's logo are read at runtime from
+`/usr/share/pixmaps/distribution-logos/`, which every openSUSE flavour installs
+(`distribution-logos-openSUSE-*`, CC-BY-SA-4.0, openSUSE trademarks). yAIst
+ships no logo files; without the package it shows the name as text. A package
+can `Recommends:` the logos. The chameleon on the welcome screen is yAIst's own
+drawing, made in code.
 
 ## Not part of yAIst: the model and its server
 

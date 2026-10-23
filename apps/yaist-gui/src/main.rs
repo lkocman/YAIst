@@ -20,6 +20,8 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             theme::install_fonts(&cc.egui_ctx);
+            // SVG from files: the system's distribution logos.
+            egui_extras::install_image_loaders(&cc.egui_ctx);
             theme::apply(&cc.egui_ctx);
             let ctx = cc.egui_ctx.clone();
             let session = yaist_ui::Session::start(move || ctx.request_repaint());
