@@ -57,6 +57,9 @@ pub struct Distro {
     pub transactional: bool,
     /// `VARIANT_ID`, e.g. `transactional` for immutable Leap.
     pub variant_id: String,
+    /// End of support (`YYYY-MM-DD`) from the base product in
+    /// /etc/products.d; rolling releases have none.
+    pub end_of_life: Option<String>,
 }
 
 impl Distro {
@@ -65,11 +68,22 @@ impl Distro {
         // either (os-release(5)).
         // YAIST_OS_RELEASE points at another os-release, to see how yAIst
         // behaves on other flavours (development and tests; plans only).
-        if let Ok(path) = std::env::var("YAIST_OS_RELEASE") {
-            return Self::from_os_release(&std::fs::read_to_string(path).unwrap_or_default(), false);
+        // YAIST_END_OF_LIFE overrides the end-of-support date the same way.
+        let mut d = if let Ok(path) = std::env::var("YAIST_OS_RELEASE") {
+            Self::from_os_release(&std::fs::read_to_string(path).unwrap_or_default(), false)
+        } else {
+            let text = std::fs::read_to_string("/etc/os-release").or_else(|_| std::fs::read_to_string("/usr/lib/os-release")).unwrap_or_default();
+            let mut d = Self::from_os_release(&text, Path::new("/usr/sbin/transactional-update").exists() && root_is_read_only());
+            d.end_of_life = end_of_life(&std::fs::read_to_string("/etc/products.d/baseproduct").unwrap_or_default());
+            d
+        };
+        if let Ok(eol) = std::env::var("YAIST_END_OF_LIFE") {
+            d.end_of_life = Some(eol).filter(|e| crate::date::parse(e).is_some());
         }
-        let text = std::fs::read_to_string("/etc/os-release").or_else(|_| std::fs::read_to_string("/usr/lib/os-release")).unwrap_or_default();
-        Self::from_os_release(&text, Path::new("/usr/sbin/transactional-update").exists() && root_is_read_only())
+        if d.rolling {
+            d.end_of_life = None;
+        }
+        d
     }
 
     /// Parses os-release. Immutable Leap keeps `ID=opensuse-leap` (it follows
@@ -91,7 +105,7 @@ impl Distro {
         let known = ["opensuse-microos", "opensuse-aeon", "opensuse-kalpa", "opensuse-leap-micro"];
         let transactional = variant_id == "transactional" || is("opensuse-microos") || known.contains(&id.as_str()) || read_only_root;
         let pretty = Some(field("PRETTY_NAME")).filter(|p| !p.is_empty()).unwrap_or_else(|| field("NAME"));
-        Self { pretty, version: field("VERSION_ID"), id, rolling, transactional, variant_id }
+        Self { pretty, version: field("VERSION_ID"), id, rolling, transactional, variant_id, end_of_life: None }
     }
 
     pub fn is_opensuse(&self) -> bool {
@@ -109,6 +123,14 @@ impl Distro {
             self.version.clone()
         }
     }
+}
+
+/// The product's own `<endoflife>` (the first one; the codestream's follows).
+pub fn end_of_life(product_xml: &str) -> Option<String> {
+    let start = product_xml.find("<endoflife>")? + "<endoflife>".len();
+    let end = product_xml[start..].find("</endoflife>")? + start;
+    let date = product_xml[start..end].trim();
+    crate::date::parse(date).map(|_| date.to_owned())
 }
 
 fn root_is_read_only() -> bool {

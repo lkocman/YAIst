@@ -700,6 +700,7 @@ impl App {
         let mut lines: Vec<Line> = Vec::new();
         let name = if d.pretty.is_empty() { "openSUSE".to_owned() } else { d.pretty.clone() };
         let (brand, rest) = name.split_once(' ').map(|(a, b)| (a.to_owned(), format!(" {b}"))).unwrap_or((name.clone(), String::new()));
+        let support = welcome::support(d, yaist_core::date::today());
         for (i, art) in welcome::ASCII_CHAMELEON.iter().enumerate() {
             let mut spans = vec![Span::styled(format!(" {art}"), self.style(t.accent))];
             match i {
@@ -712,9 +713,22 @@ impl App {
                     let (mode, explanation) = welcome::mode(d);
                     spans.push(Span::raw("  "));
                     spans.push(self.tag(&mode.to_uppercase(), t.invert_bg));
+                    if let Some(label) = support.label() {
+                        let fill = if matches!(support, welcome::Support::EndOfLife { .. }) { t.bad } else { t.invert_bg };
+                        spans.push(Span::raw(" "));
+                        spans.push(self.tag(&label.to_uppercase(), fill));
+                    }
                     spans.push(Span::styled(format!(" {explanation}"), self.style(t.ink)));
                 }
-                5 => spans.push(Span::styled("  Ask in plain language below, or start here.", self.style(t.muted))),
+                5 => {
+                    let colour = match support {
+                        welcome::Support::EndOfLife { .. } => t.bad,
+                        welcome::Support::Until { soon: true, .. } => t.warn,
+                        _ => t.muted,
+                    };
+                    spans.push(Span::styled(format!("  {}", support.sentence()), self.style(colour)));
+                }
+                6 => spans.push(Span::styled("  Ask in plain language below, or start here.", self.style(t.muted))),
                 _ => {}
             }
             lines.push(Line::from(spans));

@@ -27,6 +27,57 @@ pub fn welcome_art() -> Option<String> {
     path.is_file().then(|| format!("file://{}", path.display()))
 }
 
+/// Whether the system still gets updates, shown next to the mode tag.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Support {
+    /// A rolling release: no end of life.
+    Rolling,
+    /// Supported; `soon` when less than 90 days are left.
+    Until {
+        date: String,
+        days_left: i64,
+        soon: bool,
+    },
+    EndOfLife {
+        since: String,
+    },
+    Unknown,
+}
+
+pub fn support(d: &Distro, today: i64) -> Support {
+    if d.rolling {
+        return Support::Rolling;
+    }
+    match d.end_of_life.as_deref().and_then(|e| yaist_core::date::parse(e).map(|days| (e, days))) {
+        Some((e, days)) if days < today => Support::EndOfLife { since: e.to_owned() },
+        Some((e, days)) => Support::Until { date: e.to_owned(), days_left: days - today, soon: days - today < 90 },
+        None => Support::Unknown,
+    }
+}
+
+impl Support {
+    /// The tag: SUPPORTED or END OF LIFE (none when unknown).
+    pub fn label(&self) -> Option<&'static str> {
+        match self {
+            Support::EndOfLife { .. } => Some("End of life"),
+            Support::Unknown => None,
+            _ => Some("Supported"),
+        }
+    }
+
+    /// One sentence for under the tags.
+    pub fn sentence(&self) -> String {
+        use yaist_core::date::pretty;
+        match self {
+            Support::Rolling => "Rolling release: no end of life.".into(),
+            Support::Until { date, days_left, soon: true } => format!("Support ends {} ({days_left} days left); plan an upgrade.", pretty(date)),
+            Support::Until { date, .. } => format!("Supported until {}.", pretty(date)),
+            Support::EndOfLife { since } => format!("No security updates since {}. Upgrade to a supported release.", pretty(since)),
+            Support::Unknown => String::new(),
+        }
+    }
+}
+
 /// How this system takes changes, shown under the welcome title:
 /// (label, explanation).
 pub fn mode(d: &Distro) -> (&'static str, &'static str) {

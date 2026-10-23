@@ -72,6 +72,7 @@ In the planned design all of this moves into a privileged `yaistd` daemon.
 |---|---|
 | `YAIST_LLM_URL` | `http://127.0.0.1:8080` |
 | `YAIST_WELCOME_ART` | an SVG or PNG shown on the welcome screen instead of the drawn chameleon (e.g. the openSUSE logo) |
+| `YAIST_END_OF_LIFE` | pretend the end of support is this date (`YYYY-MM-DD`), to see the END OF LIFE state |
 | `YAIST_OS_RELEASE` | pretend to be another flavour, e.g. `tests/os-release/leap-16.1-immutable` (development; check plans only) |
 | `YAIST_MODEL` (llm-server.sh) | `unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M` |
 | `YAIST_LLM_PORT` (llm-server.sh) | `8080` |

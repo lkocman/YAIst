@@ -453,7 +453,7 @@ impl App {
             // A fixed-height row: centring inside the scroll area would use its
             // whole height.
             let art = welcome::welcome_art();
-            let hero_h = if art.is_some() { 170.0 } else { 210.0 };
+            let hero_h = if art.is_some() { 180.0 } else { 220.0 };
             ui.allocate_ui_with_layout(vec2(ui.available_width(), hero_h), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 match &art {
                     Some(uri) => {
@@ -491,11 +491,36 @@ impl App {
                     });
                     ui.add_space(8.0);
                     let (mode, explanation) = welcome::mode(d);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing.x = 10.0;
+                    let support = welcome::support(d, yaist_core::date::today());
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
                         widgets::tag(ui, mode, t.invert_bg, t.invert_fg);
-                        ui.label(RichText::new(explanation).size(13.0).color(t.ink));
+                        match (&support, support.label()) {
+                            (welcome::Support::EndOfLife { .. }, Some(label)) => {
+                                let resp = widgets::tag(ui, label, t.bad, t.invert_fg).interact(egui::Sense::click());
+                                if resp.on_hover_text("See upgrade options").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                    if let Some(i) = v.modules.iter().position(|m| m.spec.id == "upgrade") {
+                                        self.acts.push(Act::Select(i));
+                                    }
+                                }
+                            }
+                            (_, Some(label)) => {
+                                widgets::tag(ui, label, t.invert_bg, t.invert_fg);
+                            }
+                            _ => {}
+                        }
                     });
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(explanation).size(13.0).color(t.ink));
+                    let sentence = support.sentence();
+                    if !sentence.is_empty() {
+                        let colour = match support {
+                            welcome::Support::EndOfLife { .. } => t.bad,
+                            welcome::Support::Until { soon: true, .. } => t.warn,
+                            _ => t.ink,
+                        };
+                        ui.label(RichText::new(sentence).size(13.0).color(colour));
+                    }
                     ui.add_space(6.0);
                     ui.label(RichText::new("Ask yAIst in plain language on the right, or start with one of these.").size(13.0).color(t.muted));
                 });

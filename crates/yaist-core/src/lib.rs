@@ -6,6 +6,7 @@
 mod action;
 pub mod command;
 mod context;
+pub mod date;
 mod output;
 mod registry;
 pub mod validate;

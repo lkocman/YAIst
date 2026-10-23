@@ -106,6 +106,7 @@ async fn overview(ctx: &Context) -> anyhow::Result<Output> {
         ("Operating system".into(), if d.pretty.is_empty() { d.id.clone() } else { d.pretty.clone() }),
         ("Kernel".into(), kernel),
         ("Mode".into(), if d.transactional { "immutable".into() } else { "standard".into() }),
+        ("Support".into(), support_fact(d)),
         ("Update model".into(), updates.into()),
         ("Time zone".into(), tz),
         ("Network time".into(), format!("{}{}", if ntp { "on" } else { "off" }, if synced { ", synchronised" } else { "" })),
@@ -113,6 +114,16 @@ async fn overview(ctx: &Context) -> anyhow::Result<Output> {
         ("Memory".into(), memory()),
         ("Security module".into(), crate::selinux::lsm_summary()),
     ]))
+}
+
+fn support_fact(d: &yaist_core::Distro) -> String {
+    use yaist_core::date;
+    match d.end_of_life.as_deref().and_then(|e| date::parse(e).map(|days| (e, days))) {
+        _ if d.rolling => "rolling release, no end of life".into(),
+        Some((e, days)) if days < date::today() => format!("END OF LIFE since {e}"),
+        Some((e, days)) => format!("until {e} ({} days left)", days - date::today()),
+        None => "unknown".into(),
+    }
 }
 
 fn read_trim(path: &str) -> String {
