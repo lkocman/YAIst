@@ -1,0 +1,7 @@
+NAME="openSUSE Leap"
+VERSION="16.0"
+ID="opensuse-leap"
+ID_LIKE="suse opensuse"
+VERSION_ID="16.0"
+PRETTY_NAME="openSUSE Leap 16.0"
+CPE_NAME="cpe:/o:opensuse:leap:16.0"

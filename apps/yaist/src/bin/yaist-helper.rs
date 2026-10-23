@@ -118,6 +118,7 @@ fn x86_64_v2() -> bool {
 fn transactional() -> bool {
     os_release("VARIANT_ID") == "transactional"
         || os_release("ID_LIKE").split_whitespace().any(|l| l == "opensuse-microos")
+        || ["opensuse-microos", "opensuse-aeon", "opensuse-kalpa", "opensuse-leap-micro"].contains(&os_release("ID").as_str())
         || (Path::new("/usr/sbin/transactional-update").exists() && root_read_only())
 }
 

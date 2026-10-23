@@ -8,7 +8,11 @@ use yaist_core::Distro;
 /// (label, explanation).
 pub fn mode(d: &Distro) -> (&'static str, &'static str) {
     if d.transactional {
-        ("Immutable", "Read-only system: updates and software go into a new snapshot, used after a reboot.")
+        if d.rolling {
+            ("Immutable", "Read-only rolling release: updates and software go into a new snapshot, used after a reboot.")
+        } else {
+            ("Immutable", "Read-only system: updates and software go into a new snapshot, used after a reboot.")
+        }
     } else if d.rolling {
         ("Standard", "Rolling release: always the latest software, updated with zypper dup.")
     } else {

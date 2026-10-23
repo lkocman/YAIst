@@ -80,10 +80,18 @@ impl Distro {
             |key: &str| text.lines().find_map(|l| l.strip_prefix(key)?.strip_prefix('=')).map(|v| v.trim_matches('"').to_owned()).unwrap_or_default();
         let id = field("ID");
         let variant_id = field("VARIANT_ID");
-        let rolling = ["tumbleweed", "slowroll", "microos", "aeon", "kalpa"].iter().any(|r| id.contains(r));
-        let microos_like = field("ID_LIKE").split_whitespace().any(|l| l == "opensuse-microos");
-        let transactional = variant_id == "transactional" || microos_like || id.contains("micro") || read_only_root;
-        Self { pretty: field("PRETTY_NAME"), version: field("VERSION_ID"), id, rolling, transactional, variant_id }
+        let id_like = field("ID_LIKE");
+        let is = |name: &str| id == name || id_like.split_whitespace().any(|l| l == name);
+        // Every Tumbleweed derivative rolls (MicroOS, Aeon, Kalpa, Slowroll…),
+        // whatever its own name.
+        let rolling = is("opensuse-tumbleweed") || is("opensuse-slowroll");
+        // Immutable: said explicitly (immutable Leap, and the expected
+        // immutable Tumbleweed), MicroOS-like, a known immutable flavour, or a
+        // read-only root on the running system.
+        let known = ["opensuse-microos", "opensuse-aeon", "opensuse-kalpa", "opensuse-leap-micro"];
+        let transactional = variant_id == "transactional" || is("opensuse-microos") || known.contains(&id.as_str()) || read_only_root;
+        let pretty = Some(field("PRETTY_NAME")).filter(|p| !p.is_empty()).unwrap_or_else(|| field("NAME"));
+        Self { pretty, version: field("VERSION_ID"), id, rolling, transactional, variant_id }
     }
 
     pub fn is_opensuse(&self) -> bool {
@@ -93,7 +101,7 @@ impl Distro {
     /// The path segment OBS uses for this distribution's repositories,
     /// e.g. `openSUSE_Tumbleweed` or `16.0`.
     pub fn obs_repo_name(&self) -> String {
-        if self.id.contains("slowroll") {
+        if self.id.contains("slowroll") || self.pretty.contains("Slowroll") {
             "openSUSE_Slowroll".into()
         } else if self.rolling {
             "openSUSE_Tumbleweed".into()
@@ -283,27 +291,35 @@ fn dbus_error(e: zbus::Error) -> anyhow::Error {
 mod tests {
     use super::Distro;
 
-    #[test]
-    fn immutable_leap_is_transactional_leap() {
-        // From Leap_immutable-release.spec (leap-16.1).
-        let d = Distro::from_os_release(
-            "NAME=\"openSUSE Leap\"\nPRETTY_NAME=\"openSUSE Leap 16.1\"\nVARIANT=\"Micro\"\nVARIANT_ID=\"transactional\"\nVERSION_ID=\"16.1\"\nID=\"opensuse-leap\"\nID_LIKE=\"suse opensuse opensuse-microos\"\n",
-            false,
-        );
-        assert_eq!(d.id, "opensuse-leap");
-        assert!(d.transactional && !d.rolling);
-        assert_eq!(d.obs_repo_name(), "16.1");
+    fn load(name: &str) -> Distro {
+        let path = format!("{}/../../tests/os-release/{name}", env!("CARGO_MANIFEST_DIR"));
+        Distro::from_os_release(&std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}")), false)
     }
 
     #[test]
-    fn flavours() {
-        let leap = Distro::from_os_release("ID=\"opensuse-leap\"\nVERSION_ID=\"16.0\"\nID_LIKE=\"suse opensuse\"\n", false);
-        assert!(!leap.transactional && !leap.rolling);
-        let tw = Distro::from_os_release("ID=\"opensuse-tumbleweed\"\nID_LIKE=\"opensuse suse\"\n", false);
-        assert!(tw.rolling && !tw.transactional);
-        let aeon = Distro::from_os_release("ID=\"opensuse-aeon\"\nID_LIKE=\"suse opensuse opensuse-microos\"\n", true);
-        assert!(aeon.rolling && aeon.transactional);
-        let micro = Distro::from_os_release("ID=\"opensuse-leap-micro\"\nVERSION_ID=\"6.2\"\n", false);
-        assert!(micro.transactional && !micro.rolling);
+    fn flavours_from_real_os_release_files() {
+        // (file, name shown, rolling, immutable, OBS repository)
+        let cases = [
+            ("leap-16.0", "openSUSE Leap 16.0", false, false, "16.0"),
+            ("leap-16.1-immutable", "openSUSE Leap 16.1", false, true, "16.1"),
+            ("tumbleweed", "openSUSE Tumbleweed", true, false, "openSUSE_Tumbleweed"),
+            ("microos", "openSUSE MicroOS", true, true, "openSUSE_Tumbleweed"),
+            ("aeon", "openSUSE Aeon", true, true, "openSUSE_Tumbleweed"),
+            ("kalpa", "openSUSE Kalpa", true, true, "openSUSE_Tumbleweed"),
+            ("tumbleweed-immutable-future", "openSUSE Tumbleweed", true, true, "openSUSE_Tumbleweed"),
+        ];
+        for (file, name, rolling, immutable, obs) in cases {
+            let d = load(file);
+            assert_eq!(d.pretty, name, "{file}");
+            assert_eq!(d.rolling, rolling, "{file}: rolling");
+            assert_eq!(d.transactional, immutable, "{file}: immutable");
+            assert_eq!(d.obs_repo_name(), obs, "{file}");
+        }
+    }
+
+    #[test]
+    fn read_only_root_means_immutable() {
+        let d = Distro::from_os_release("ID=\"opensuse-tumbleweed\"\n", true);
+        assert!(d.rolling && d.transactional);
     }
 }

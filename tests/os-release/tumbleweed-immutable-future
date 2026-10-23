@@ -1,0 +1,8 @@
+# Hypothetical: an immutable Tumbleweed identified the way immutable Leap is.
+NAME="openSUSE Tumbleweed"
+PRETTY_NAME="openSUSE Tumbleweed"
+VARIANT="Micro"
+VARIANT_ID="transactional"
+VERSION_ID="20261101"
+ID="opensuse-tumbleweed"
+ID_LIKE="opensuse suse opensuse-microos"
