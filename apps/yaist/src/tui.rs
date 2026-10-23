@@ -14,8 +14,8 @@ use ratatui::Frame;
 use yaist_core::{ActionSpec, Output, ParamKind, Risk};
 use yaist_ui::palette::{Rgb, Tokens};
 use yaist_ui::welcome::{self, Start};
+use yaist_ui::{reboot_notice, update_summary, UpdateLevel, UPDATE_ACTION};
 use yaist_ui::{row_action_is_direct, row_args, tone_of, Cmd, Entry, Form, LlmStatus, Panel, PlanStatus, Session, State};
-use yaist_ui::{update_summary, UpdateLevel, UPDATE_ACTION};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -653,7 +653,10 @@ impl App {
 
     /// Solid and coloured while updates wait, so it is seen on every screen.
     fn update_badge(&self, s: &State) -> Span<'static> {
-        let (level, badge, ..) = update_summary(&s.updates);
+        if s.updates.reboot_needed() {
+            return self.tag("REBOOT TO APPLY", self.t.warn);
+        }
+        let (level, badge, ..) = update_summary(&s.updates, s.distro.transactional);
         let colour = self.update_colour(level);
         match level {
             UpdateLevel::Available | UpdateLevel::Security => self.tag(&badge.to_uppercase(), colour),
@@ -665,7 +668,16 @@ impl App {
     /// and the key to install.
     fn update_line(&self, s: &State) -> Line<'static> {
         let t = &self.t;
-        let (level, _, headline, detail) = update_summary(&s.updates);
+        if let Some((headline, detail)) = reboot_notice(&s.updates, s.distro.transactional) {
+            return Line::from(vec![
+                Span::styled(" ▌", self.style(t.warn)),
+                Span::styled(format!("{headline}  "), self.style(t.ink_strong).add_modifier(Modifier::BOLD)),
+                Span::styled(detail, self.style(t.muted)),
+                Span::raw("  "),
+                Span::styled(" /system reboot ", Style::new().fg(c(t.invert_fg)).bg(c(t.warn)).add_modifier(Modifier::BOLD)),
+            ]);
+        }
+        let (level, _, headline, detail) = update_summary(&s.updates, s.distro.transactional);
         let colour = self.update_colour(level);
         let mut spans = vec![
             Span::styled(" ▌", self.style(colour)),

@@ -24,7 +24,7 @@ const TARGETS: ActionSpec = ActionSpec {
 const DISTRIBUTION: ActionSpec = ActionSpec {
     id: "upgrade.distribution",
     title: "Upgrade",
-    description: "Upgrade the distribution. Tumbleweed/Slowroll: full zypper dup (no version needed). Leap: move to the newer Leap release given as version, switching the openSUSE repositories to it first and disabling third-party repositories pinned to the old release. Takes long; reboot afterwards.",
+    description: "Upgrade the distribution. Tumbleweed/Slowroll: full zypper dup (no version needed). Leap and Leap Micro (also immutable): move to the newer release given as version, switching the openSUSE repositories to it first and disabling third-party repositories pinned to the old release. Takes long; reboot afterwards.",
     risk: Risk::Dangerous,
     params: &[
         Param::text("version", "Target Leap release, e.g. 16.1 (Leap only)").optional(),
@@ -47,32 +47,49 @@ pub fn register(reg: &mut Registry) {
     reg.shell(DISTRIBUTION.id, |a, d| {
         if d.rolling {
             return if d.transactional {
-                vec!["sudo transactional-update dup".into(), "sudo reboot".into()]
+                vec!["sudo transactional-update --continue dup".into(), "sudo reboot".into()]
             } else {
                 vec!["sudo zypper dup".into(), "sudo reboot".into()]
             };
         }
         let v = sq(a.opt_str("version").unwrap_or("<version>"));
+        let (repos_pkg, url) = if d.id == "opensuse-leap-micro" {
+            (
+                "openSUSE-repos-LeapMicro",
+                format!("https://download.opensuse.org/distribution/leap-micro/{v}/product/repo/openSUSE-Leap-Micro-{v}-$(uname -m)/"),
+            )
+        } else {
+            ("openSUSE-repos-Leap", format!("https://download.opensuse.org/distribution/leap/{v}/repo/oss"))
+        };
+        // On transactional systems each step runs inside the new snapshot.
+        let z = if d.transactional { "sudo transactional-update --continue run zypper" } else { "sudo zypper" };
         let mut cmds = Vec::new();
         if a.bool("disable_third_party") {
-            cmds.push(format!("sudo zypper modifyrepo --disable <third-party repos pinned to {}>", d.version));
+            cmds.push(format!("{z} modifyrepo --disable <third-party repos pinned to {}>", d.version));
         }
         cmds.extend([
-            "sudo zypper install --force-resolution openSUSE-repos-Leap".into(),
-            "sudo zypper refresh-services".into(),
-            format!("sudo zypper addrepo --refresh https://download.opensuse.org/distribution/leap/{v}/repo/oss tmp"),
-            "sudo zypper install --repo tmp --from tmp --force-resolution openSUSE-repos-Leap".into(),
-            "sudo zypper removerepo tmp".into(),
-            "sudo zypper refresh-services".into(),
-            format!("sudo zypper --releasever {v} dup --force-resolution --allow-vendor-change --download-in-advance"),
+            format!("{z} install --force-resolution {repos_pkg}"),
+            format!("{z} refresh-services"),
+            format!("{z} addrepo --refresh {url} tmp"),
+            format!("{z} install --repo tmp --from tmp --force-resolution {repos_pkg}"),
+            format!("{z} removerepo tmp"),
+            format!("{z} refresh-services"),
+            format!("{z} --releasever {v} dup --force-resolution --allow-vendor-change --download-in-advance"),
             "sudo reboot".into(),
         ]);
         cmds
     });
 }
 
-fn is_leap(ctx: &Context) -> bool {
-    ctx.distro.id == "opensuse-leap"
+/// The Leap line this system follows: (get.opensuse.org key, helper flavour,
+/// display name). Immutable Leap is `opensuse-leap` too, with
+/// `VARIANT_ID=transactional`.
+fn leap_line(d: &yaist_core::Distro) -> Option<(&'static str, &'static str, &'static str)> {
+    match d.id.as_str() {
+        "opensuse-leap" => Some(("Leap", "leap", "openSUSE Leap")),
+        "opensuse-leap-micro" => Some(("LeapMicro", "leap-micro", "openSUSE Leap Micro")),
+        _ => None,
+    }
 }
 
 /// Repositories an upgrade may affect: (alias, url, pinned to this release).
@@ -99,11 +116,11 @@ async fn third_party(ctx: &Context) -> Result<Vec<(String, String, bool)>> {
         .collect())
 }
 
-/// Newer, supported Leap releases from get.opensuse.org: (version, state).
-async fn leap_releases(current: &str) -> Result<Vec<(String, String)>> {
+/// Newer, supported releases of a Leap line from get.opensuse.org: (version, state).
+async fn leap_releases(key: &str, current: &str) -> Result<Vec<(String, String)>> {
     let client = reqwest::Client::builder().timeout(Duration::from_secs(10)).build()?;
     let v: Value = client.get(RELEASES_API).send().await?.error_for_status()?.json().await.map_err(|e| anyhow!("reading {RELEASES_API}: {e}"))?;
-    let mut out: Vec<(String, String)> = v["Leap"]
+    let mut out: Vec<(String, String)> = v[key]
         .as_array()
         .into_iter()
         .flatten()
@@ -132,18 +149,21 @@ async fn targets(ctx: &Context) -> Result<Output> {
         t.push(vec!["rolling".into(), "rolling".into(), how.into()]);
         return Ok(Output::Table(t));
     }
-    if !is_leap(ctx) {
+    let Some((key, flavour, line)) = leap_line(d) else {
         return Ok(Output::Text(format!("Upgrades from {} are not supported yet.", if d.pretty.is_empty() { &d.id } else { &d.pretty })));
-    }
-    let releases = leap_releases(&d.version).await?;
+    };
+    let releases = leap_releases(key, &d.version).await?;
     if releases.is_empty() {
-        return Ok(Output::Text(format!("{} is the newest openSUSE Leap release.", d.pretty)));
+        return Ok(Output::Text(format!("{} is the newest {line} release.", d.pretty)));
     }
     let repos = third_party(ctx).await?;
     let pinned: Vec<&str> = repos.iter().filter(|r| r.2).map(|r| r.0.as_str()).collect();
     let kept: Vec<&str> = repos.iter().filter(|r| !r.2).map(|r| r.0.as_str()).collect();
     for (ver, state) in releases {
         let mut notes = vec![format!("switch openSUSE repos to {ver}, then zypper --releasever {ver} dup")];
+        if d.transactional {
+            notes.push("inside a new snapshot (transactional-update run); reboot to use it".into());
+        }
         if !pinned.is_empty() {
             notes.push(format!("disables {}", pinned.join(", ")));
         }
@@ -151,7 +171,7 @@ async fn targets(ctx: &Context) -> Result<Output> {
             notes.push(format!("keeps {}", kept.join(", ")));
         }
         let major: u32 = ver.split('.').next().and_then(|m| m.parse().ok()).unwrap_or(0);
-        if std::env::consts::ARCH == "x86_64" && major >= 16 && !x86_64_v2() {
+        if flavour == "leap" && std::env::consts::ARCH == "x86_64" && major >= 16 && !x86_64_v2() {
             notes.insert(0, "NOT POSSIBLE: needs an x86-64-v2 CPU".into());
         }
         t.push(vec![ver, state.to_lowercase(), notes.join("; ")]);
@@ -169,20 +189,20 @@ async fn upgrade(ctx: &Context, version: Option<&str>, disable_third_party: bool
         }
         return Ok(Output::Done(format!("{} is fully upgraded; reboot if the kernel or core libraries changed", d.pretty)));
     }
-    if !is_leap(ctx) {
+    let Some((key, flavour, _)) = leap_line(d) else {
         bail!("upgrades from {} are not supported yet", d.id);
-    }
+    };
     let Some(version) = version.filter(|v| *v != "rolling") else {
         bail!("which Leap release? see upgrade.targets");
     };
     validate::release_version(version).map_err(|e| anyhow!(e))?;
-    if !leap_releases(&d.version).await?.iter().any(|(v, _)| v == version) {
-        bail!("Leap {version} is not an available upgrade from {}", d.version);
+    if !leap_releases(key, &d.version).await?.iter().any(|(v, _)| v == version) {
+        bail!("{version} is not an available upgrade from {}", d.version);
     }
     let aliases: Vec<String> =
         if disable_third_party { third_party(ctx).await?.into_iter().filter(|r| r.2).map(|r| r.0).collect() } else { Vec::new() };
-    let mut args = vec!["migrate-leap", version];
+    let mut args = vec!["migrate-leap", flavour, version];
     args.extend(aliases.iter().map(String::as_str));
     helper::run(ctx, &args).await?;
-    Ok(Output::Done(format!("Upgraded to openSUSE Leap {version}; reboot to finish")))
+    Ok(Output::Done(format!("Upgraded to {version}; reboot to finish")))
 }

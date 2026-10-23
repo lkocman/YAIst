@@ -41,6 +41,14 @@ const SET_NTP: ActionSpec = ActionSpec {
     params: &[Param::boolean("enabled", "Synchronise the clock over the network").default("true")],
 };
 
+const REBOOT: ActionSpec = ActionSpec {
+    id: "system.reboot",
+    title: "Reboot",
+    description: "Restart the computer now, e.g. to finish updates installed into a new snapshot. Running programs are closed.",
+    risk: Risk::Dangerous,
+    params: &[],
+};
+
 pub fn register(reg: &mut Registry) {
     reg.module(ModuleSpec { id: "system", title: "System", tagline: "Hostname, time and overview", overview: OVERVIEW.id, row_actions: &[] });
 
@@ -57,6 +65,12 @@ pub fn register(reg: &mut Registry) {
         ctx.call::<_, ()>(TIMEDATE1, TIMEDATE1_PATH, TIMEDATE1, "SetTimezone", &(tz.as_str(), true), true).await?;
         Ok(Output::Done(format!("Time zone set to {tz}")))
     });
+
+    reg.action(REBOOT, |ctx, _| async move {
+        ctx.call::<_, ()>("org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", "Reboot", &(true,), true).await?;
+        Ok(Output::Done("Rebooting".into()))
+    });
+    reg.shell(REBOOT.id, |_, _| vec!["sudo systemctl reboot".into()]);
 
     reg.action(SET_NTP, |ctx, args| async move {
         let on = args.bool("enabled");

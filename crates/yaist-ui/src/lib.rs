@@ -23,32 +23,49 @@ pub enum UpdateLevel {
     Security,
 }
 
+/// The reboot reminder, when installed changes wait for one: (headline, detail).
+pub fn reboot_notice(u: &UpdateStatus, transactional: bool) -> Option<(String, String)> {
+    u.reboot_needed().then(|| {
+        let detail = if transactional {
+            "Changes were installed into a new snapshot. It becomes the running system after a reboot; until then nothing has changed."
+        } else {
+            "A new kernel or core libraries were installed. Reboot to start using them."
+        };
+        ("Reboot to finish".to_owned(), detail.to_owned())
+    })
+}
+
+pub const REBOOT_ACTION: &str = "system.reboot";
+
 /// Text for the update banner and badge: (level, badge, headline, detail).
-pub fn update_summary(u: &UpdateStatus) -> (UpdateLevel, String, String, String) {
+/// On transactional systems updates go into a new snapshot, and the text
+/// says so.
+pub fn update_summary(u: &UpdateStatus, transactional: bool) -> (UpdateLevel, String, String, String) {
     let ago = |checked: &std::time::Instant| match checked.elapsed().as_secs() / 60 {
         0 => "Checked just now".to_owned(),
         1 => "Checked a minute ago".to_owned(),
         m => format!("Checked {m} minutes ago"),
     };
+    let how = if transactional { " They install into a new snapshot; reboot to use it." } else { "" };
     match u {
         UpdateStatus::Checking => (UpdateLevel::Unknown, "checking updates".into(), "Checking for updates…".into(), String::new()),
         UpdateStatus::Failed(e) => (UpdateLevel::Unknown, "updates unknown".into(), "Could not check for updates".into(), e.clone()),
-        UpdateStatus::Known { packages: 0, security: 0, checked } => (
+        UpdateStatus::Known { packages: 0, security: 0, checked, .. } => (
             UpdateLevel::UpToDate,
             "up to date".into(),
             "Your system is up to date".into(),
             format!("{}, from the last repository refresh", ago(checked)),
         ),
-        UpdateStatus::Known { packages, security, checked } => {
+        UpdateStatus::Known { packages, security, checked, .. } => {
             let n = (*packages).max(*security);
             let headline = format!("{n} update{} available", if n == 1 { "" } else { "s" });
             if *security > 0 {
                 let badge = format!("{n} updates · {security} security");
-                let detail =
-                    format!("Includes {security} security fix{}; install them soon. {}.", if *security == 1 { "" } else { "es" }, ago(checked));
+                let fixes = if *security == 1 { "fix" } else { "fixes" };
+                let detail = format!("Includes {security} security {fixes}; install them soon.{how} {}.", ago(checked));
                 (UpdateLevel::Security, badge, headline, detail)
             } else {
-                (UpdateLevel::Available, format!("{n} updates"), headline, format!("Bug fixes and improvements. {}.", ago(checked)))
+                (UpdateLevel::Available, format!("{n} updates"), headline, format!("Bug fixes and improvements.{how} {}.", ago(checked)))
             }
         }
     }

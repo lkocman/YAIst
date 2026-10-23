@@ -80,6 +80,14 @@ fn every_action_teaches_its_terminal_command() {
         yaist_core::Distro { id: "opensuse-leap".into(), version: "16.0".into(), ..Default::default() },
         yaist_core::Distro { id: "opensuse-tumbleweed".into(), rolling: true, ..Default::default() },
         yaist_core::Distro { id: "opensuse-aeon".into(), rolling: true, transactional: true, ..Default::default() },
+        yaist_core::Distro {
+            id: "opensuse-leap".into(),
+            version: "16.1".into(),
+            transactional: true,
+            variant_id: "transactional".into(),
+            ..Default::default()
+        },
+        yaist_core::Distro { id: "opensuse-leap-micro".into(), version: "6.2".into(), transactional: true, ..Default::default() },
     ];
     for spec in reg.specs() {
         // Fill required parameters with something valid-looking.

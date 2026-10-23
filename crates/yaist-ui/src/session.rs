@@ -94,7 +94,7 @@ impl Shared {
                 }
             });
             let status = match yaist_modules::update_counts(&sh.ctx).await {
-                Ok(c) => UpdateStatus::Known { packages: c.packages, security: c.security, checked: Instant::now() },
+                Ok(c) => UpdateStatus::Known { packages: c.packages, security: c.security, reboot: c.reboot, checked: Instant::now() },
                 Err(e) => UpdateStatus::Failed(format!("{e:#}")),
             };
             sh.update(|s| s.updates = status);
@@ -440,7 +440,7 @@ impl Jobs {
             self.agent.push_tool_result(&call, &note);
         }
         self.sh.focus_module(spec.module());
-        if matches!(spec.module(), "packages" | "repos" | "upgrade") {
+        if matches!(spec.module(), "packages" | "repos" | "upgrade" | "snapshots") {
             self.sh.check_updates();
         }
     }

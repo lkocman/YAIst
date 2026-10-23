@@ -18,21 +18,40 @@ pub async fn query(ctx: &Context, args: &[&str]) -> Result<String> {
     ctx.run_ok(&argv, OK).await
 }
 
-/// Runs a zypper command as root and returns the tail of its output.
+/// Runs a zypper command as root and returns the tail of its output. On a
+/// read-only root, a command zypper refuses is retried inside a transaction.
 pub async fn change(ctx: &Context, args: &[&str]) -> Result<String> {
     let mut argv = vec!["/usr/bin/zypper", "--non-interactive"];
     argv.extend_from_slice(args);
-    let out = ctx.run_privileged_ok(&argv, OK).await?;
-    Ok(last_lines(out.trim(), 3))
+    match ctx.run_privileged_ok(&argv, OK).await {
+        Ok(out) => Ok(last_lines(out.trim(), 3)),
+        Err(e) if ctx.distro.transactional && e.to_string().to_ascii_lowercase().contains("read-only") => {
+            let mut targs = vec!["run", "/usr/bin/zypper", "--non-interactive"];
+            targs.extend_from_slice(args);
+            transactional(ctx, &targs).await
+        }
+        Err(e) => Err(e),
+    }
 }
 
-/// Package operations on transactional systems go into a new snapshot that
-/// becomes active after a reboot.
+/// Changes on transactional systems go into a new snapshot that becomes
+/// active after a reboot. `--continue` builds on the snapshot that boots next,
+/// so several changes before a reboot all land; without it each call would
+/// start again from the running system and drop the previous one.
 pub async fn transactional(ctx: &Context, args: &[&str]) -> Result<String> {
-    let mut argv = vec!["/usr/sbin/transactional-update", "--non-interactive"];
+    let mut argv = vec!["/usr/sbin/transactional-update", "--non-interactive", "--continue"];
     argv.extend_from_slice(args);
     let out = ctx.run_privileged(&argv).await?;
     Ok(format!("{}\nReboot to switch to the new snapshot.", last_lines(out.trim(), 3)))
+}
+
+/// Whether a reboot is needed to finish installed changes: a pending
+/// transactional snapshot, or updated core libraries/kernel elsewhere.
+pub async fn reboot_needed(ctx: &Context) -> bool {
+    if std::path::Path::new("/run/reboot-needed").exists() {
+        return true;
+    }
+    !ctx.distro.transactional && ctx.exit_code(&["/usr/bin/zypper", "needs-rebooting"]).await.ok() == Some(102)
 }
 
 pub fn parse(xml: &str) -> Result<roxmltree::Document<'_>> {

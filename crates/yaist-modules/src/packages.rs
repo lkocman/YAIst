@@ -61,7 +61,7 @@ const REMOVE: ActionSpec = ActionSpec {
 const UPDATE_SYSTEM: ActionSpec = ActionSpec {
     id: "packages.update_system",
     title: "Update system",
-    description: "Update the whole system the way this distribution expects (Leap: zypper update, Tumbleweed/Slowroll: zypper dup, immutable: transactional-update).",
+    description: "Install all available updates: update the whole system the way this distribution expects (Leap: zypper update, Tumbleweed/Slowroll: zypper dup, immutable: transactional-update into a new snapshot).",
     risk: Risk::Dangerous,
     params: &[],
 };
@@ -69,7 +69,7 @@ const UPDATE_SYSTEM: ActionSpec = ActionSpec {
 const REFRESH: ActionSpec = ActionSpec {
     id: "packages.refresh",
     title: "Refresh",
-    description: "Download fresh metadata from all enabled repositories.",
+    description: "Only download fresh repository metadata (zypper refresh); installs nothing. To install updates use update_system.",
     risk: Risk::Change,
     params: &[],
 };
@@ -126,8 +126,8 @@ pub fn register(reg: &mut Registry) {
     reg.shell(UPDATE.id, |a, d| pkg_cmd("update", a.str("packages"), d));
     reg.shell(REMOVE.id, |a, d| pkg_cmd("remove", a.str("packages"), d));
     reg.shell(UPDATE_SYSTEM.id, |_, d| match (d.transactional, d.rolling) {
-        (true, true) => vec!["sudo transactional-update dup".into(), "sudo reboot".into()],
-        (true, false) => vec!["sudo transactional-update up".into(), "sudo reboot".into()],
+        (true, true) => vec!["sudo transactional-update --continue dup".into(), "sudo reboot".into()],
+        (true, false) => vec!["sudo transactional-update --continue up".into(), "sudo reboot".into()],
         (false, true) => vec!["sudo zypper dup".into()],
         (false, false) => vec!["sudo zypper update".into()],
     });
@@ -138,20 +138,22 @@ pub fn register(reg: &mut Registry) {
 fn pkg_cmd(op: &str, packages: &str, d: &yaist_core::Distro) -> Vec<String> {
     let pkgs: Vec<String> = packages.split_whitespace().map(sq).collect();
     if d.transactional {
-        vec![format!("sudo transactional-update pkg {op} {}", pkgs.join(" ")), "sudo reboot".into()]
+        vec![format!("sudo transactional-update --continue pkg {op} {}", pkgs.join(" ")), "sudo reboot".into()]
     } else {
         vec![format!("sudo zypper {op} {}", pkgs.join(" "))]
     }
 }
 
 async fn pkg_op(ctx: &Context, op: &str, pkgs: &[&str]) -> Result<String> {
-    let mut args = vec![op, "--"];
-    args.extend_from_slice(pkgs);
     if ctx.distro.transactional {
-        let mut targs = vec!["pkg"];
-        targs.extend(args);
+        // Package names are validated not to start with '-', and
+        // transactional-update would take a "--" as its own.
+        let mut targs = vec!["pkg", op];
+        targs.extend_from_slice(pkgs);
         zypper::transactional(ctx, &targs).await
     } else {
+        let mut args = vec![op, "--"];
+        args.extend_from_slice(pkgs);
         zypper::change(ctx, &args).await
     }
 }
@@ -163,6 +165,9 @@ pub struct UpdateCounts {
     pub packages: usize,
     /// Needed security patches (Leap; rolling releases have no patches).
     pub security: usize,
+    /// Installed changes wait for a reboot (a pending transactional
+    /// snapshot, or a new kernel or core libraries).
+    pub reboot: bool,
 }
 
 /// Counts available updates from the cached repository metadata (no root).
@@ -181,7 +186,7 @@ pub async fn update_counts(ctx: &Context) -> Result<UpdateCounts> {
             .filter(|n| n.attribute("category") == Some("security") && n.attribute("status") == Some("needed"))
             .count()
     };
-    Ok(UpdateCounts { packages, security })
+    Ok(UpdateCounts { packages, security, reboot: zypper::reboot_needed(ctx).await })
 }
 
 async fn updates(ctx: &Context) -> Result<Output> {

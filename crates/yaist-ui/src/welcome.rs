@@ -21,7 +21,13 @@ pub struct StartItem {
 }
 
 pub fn start_items(d: &Distro) -> Vec<StartItem> {
-    let update = if d.rolling {
+    let update = if d.transactional {
+        StartItem {
+            title: "Install updates",
+            text: "Updates go into a new snapshot; reboot to use them, or roll back.",
+            start: Start::Action("packages.update_system"),
+        }
+    } else if d.rolling {
         StartItem {
             title: "Update Tumbleweed",
             text: "Bring the system up to the latest snapshot with zypper dup.",

@@ -52,20 +52,38 @@ pub struct Distro {
     /// Tumbleweed, Slowroll and the immutable variants roll; updating them
     /// means `zypper dup`, not `zypper up`.
     pub rolling: bool,
-    /// Read-only root managed by `transactional-update` (MicroOS, Aeon,
-    /// Kalpa, Leap Micro).
+    /// Read-only root managed by `transactional-update` (immutable Leap,
+    /// Leap Micro, MicroOS, Aeon, Kalpa).
     pub transactional: bool,
+    /// `VARIANT_ID`, e.g. `transactional` for immutable Leap.
+    pub variant_id: String,
 }
 
 impl Distro {
     pub fn detect() -> Self {
-        let text = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
+        // /etc/os-release is usually a symlink to /usr/lib/os-release; read
+        // either (os-release(5)).
+        // YAIST_OS_RELEASE points at another os-release, to see how yAIst
+        // behaves on other flavours (development and tests; plans only).
+        if let Ok(path) = std::env::var("YAIST_OS_RELEASE") {
+            return Self::from_os_release(&std::fs::read_to_string(path).unwrap_or_default(), false);
+        }
+        let text = std::fs::read_to_string("/etc/os-release").or_else(|_| std::fs::read_to_string("/usr/lib/os-release")).unwrap_or_default();
+        Self::from_os_release(&text, Path::new("/usr/sbin/transactional-update").exists() && root_is_read_only())
+    }
+
+    /// Parses os-release. Immutable Leap keeps `ID=opensuse-leap` (it follows
+    /// Leap releases) but says `VARIANT_ID=transactional` and lists
+    /// `opensuse-microos` in `ID_LIKE`; `read_only_root` catches the rest.
+    pub fn from_os_release(text: &str, read_only_root: bool) -> Self {
         let field =
             |key: &str| text.lines().find_map(|l| l.strip_prefix(key)?.strip_prefix('=')).map(|v| v.trim_matches('"').to_owned()).unwrap_or_default();
         let id = field("ID");
+        let variant_id = field("VARIANT_ID");
         let rolling = ["tumbleweed", "slowroll", "microos", "aeon", "kalpa"].iter().any(|r| id.contains(r));
-        let transactional = Path::new("/usr/sbin/transactional-update").exists() && root_is_read_only();
-        Self { pretty: field("PRETTY_NAME"), version: field("VERSION_ID"), id, rolling, transactional }
+        let microos_like = field("ID_LIKE").split_whitespace().any(|l| l == "opensuse-microos");
+        let transactional = variant_id == "transactional" || microos_like || id.contains("micro") || read_only_root;
+        Self { pretty: field("PRETTY_NAME"), version: field("VERSION_ID"), id, rolling, transactional, variant_id }
     }
 
     pub fn is_opensuse(&self) -> bool {
@@ -169,6 +187,25 @@ impl Context {
         run_command(argv, ok).await
     }
 
+    /// Runs a command and returns only its exit code (for tools that answer
+    /// with one, like `zypper needs-rebooting`).
+    pub async fn exit_code(&self, argv: &[&str]) -> Result<i32> {
+        let (prog, rest) = argv.split_first().ok_or_else(|| anyhow!("empty command"))?;
+        let status = tokio::process::Command::new(prog)
+            .args(rest)
+            .env_clear()
+            .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+            .env("LC_ALL", "C.UTF-8")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .status()
+            .await
+            .with_context(|| format!("running {prog}"))?;
+        Ok(status.code().unwrap_or(-1))
+    }
+
     /// Runs a command as root: directly when we already are, otherwise via
     /// pkexec. Arguments are passed as argv, never through a shell.
     pub async fn run_privileged(&self, argv: &[&str]) -> Result<String> {
@@ -239,5 +276,34 @@ fn dbus_error(e: zbus::Error) -> anyhow::Error {
             }
         }
         _ => anyhow!(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Distro;
+
+    #[test]
+    fn immutable_leap_is_transactional_leap() {
+        // From Leap_immutable-release.spec (leap-16.1).
+        let d = Distro::from_os_release(
+            "NAME=\"openSUSE Leap\"\nPRETTY_NAME=\"openSUSE Leap 16.1\"\nVARIANT=\"Micro\"\nVARIANT_ID=\"transactional\"\nVERSION_ID=\"16.1\"\nID=\"opensuse-leap\"\nID_LIKE=\"suse opensuse opensuse-microos\"\n",
+            false,
+        );
+        assert_eq!(d.id, "opensuse-leap");
+        assert!(d.transactional && !d.rolling);
+        assert_eq!(d.obs_repo_name(), "16.1");
+    }
+
+    #[test]
+    fn flavours() {
+        let leap = Distro::from_os_release("ID=\"opensuse-leap\"\nVERSION_ID=\"16.0\"\nID_LIKE=\"suse opensuse\"\n", false);
+        assert!(!leap.transactional && !leap.rolling);
+        let tw = Distro::from_os_release("ID=\"opensuse-tumbleweed\"\nID_LIKE=\"opensuse suse\"\n", false);
+        assert!(tw.rolling && !tw.transactional);
+        let aeon = Distro::from_os_release("ID=\"opensuse-aeon\"\nID_LIKE=\"suse opensuse opensuse-microos\"\n", true);
+        assert!(aeon.rolling && aeon.transactional);
+        let micro = Distro::from_os_release("ID=\"opensuse-leap-micro\"\nVERSION_ID=\"6.2\"\n", false);
+        assert!(micro.transactional && !micro.rolling);
     }
 }

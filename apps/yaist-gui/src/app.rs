@@ -5,8 +5,8 @@ use serde_json::{Map, Value};
 use yaist_core::{Output, ParamKind, Risk, Table};
 use yaist_ui::welcome::{self, Start};
 use yaist_ui::{
-    row_action_is_direct, row_args, tone_of, update_summary, Cmd, Entry, Form, LlmStatus, ModuleView, Panel, Plan, PlanStatus, Session, UpdateLevel,
-    UpdateStatus, UPDATE_ACTION,
+    reboot_notice, row_action_is_direct, row_args, tone_of, update_summary, Cmd, Entry, Form, LlmStatus, ModuleView, Panel, Plan, PlanStatus,
+    Session, UpdateLevel, UpdateStatus, UPDATE_ACTION,
 };
 
 use crate::theme::{self, Tokens};
@@ -560,7 +560,14 @@ impl App {
     /// from every screen; opens Packages.
     fn update_badge(&mut self, ui: &mut Ui, v: &View) {
         let t = Tokens::get(ui.ctx());
-        let (level, badge, ..) = update_summary(&v.updates);
+        if v.updates.reboot_needed() {
+            let resp = widgets::tag(ui, "reboot to apply", t.warn, t.invert_fg).interact(egui::Sense::click());
+            if resp.on_hover_text("Installed changes wait for a reboot").clicked() {
+                self.acts.push(Act::Propose(yaist_ui::REBOOT_ACTION, Map::new()));
+            }
+            ui.add_space(8.0);
+        }
+        let (level, badge, ..) = update_summary(&v.updates, v.distro_info.transactional);
         let resp = match level {
             UpdateLevel::Security => widgets::tag(ui, &badge, t.bad, t.invert_fg),
             UpdateLevel::Available => widgets::tag(ui, &badge, t.warn, t.invert_fg),
@@ -579,7 +586,23 @@ impl App {
     /// when the system is up to date.
     fn update_banner(&mut self, ui: &mut Ui, v: &View, with_list_button: bool) {
         let t = Tokens::get(ui.ctx());
-        let (level, _, headline, detail) = update_summary(&v.updates);
+        if let Some((headline, detail)) = reboot_notice(&v.updates, v.distro_info.transactional) {
+            let frame = Frame::new().fill(t.sunken).stroke(t.hairline()).inner_margin(Margin { left: 20, right: 16, top: 16, bottom: 16 });
+            let resp = frame.show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                widgets::hud(ui, "pending", t.warn);
+                ui.label(RichText::new(&headline).font(FontId::new(22.0, theme::display())).color(t.ink_strong));
+                ui.label(RichText::new(&detail).size(13.0).color(t.muted));
+                ui.add_space(10.0);
+                if widgets::button(ui, "Reboot now", Kind::Danger, 140.0).clicked() {
+                    self.acts.push(Act::Propose(yaist_ui::REBOOT_ACTION, Map::new()));
+                }
+            });
+            let r = resp.response.rect;
+            ui.painter().rect_filled(egui::Rect::from_min_size(r.min, vec2(4.0, r.height())), CornerRadius::ZERO, t.warn);
+            ui.add_space(12.0);
+        }
+        let (level, _, headline, detail) = update_summary(&v.updates, v.distro_info.transactional);
         let colour = match level {
             UpdateLevel::Security => t.bad,
             UpdateLevel::Available => t.warn,

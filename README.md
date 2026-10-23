@@ -5,7 +5,10 @@ asking in plain language, by typing `/commands`, or in classic panels. All
 three run the same actions, and every change waits for your confirmation.
 
 - Runs on any openSUSE: Leap, Tumbleweed, Slowroll and the immutable variants
-  (updates use `zypper up`, `zypper dup` or `transactional-update` as fits).
+  (immutable Leap, Leap Micro, MicroOS, Aeon, Kalpa). Updates use `zypper up`,
+  `zypper dup` or `transactional-update --continue` as fits; on immutable
+  systems every change lands in one new snapshot, and yAIst shows when a
+  reboot is needed to use it.
 - The model runs locally (llama.cpp); nothing leaves the machine.
 - Terminal UI and desktop GUI with the same layout.
 
@@ -68,6 +71,7 @@ In the planned design all of this moves into a privileged `yaistd` daemon.
 | Variable | Default |
 |---|---|
 | `YAIST_LLM_URL` | `http://127.0.0.1:8080` |
+| `YAIST_OS_RELEASE` | pretend to be another flavour, e.g. `tests/os-release/leap-16.1-immutable` (development; check plans only) |
 | `YAIST_MODEL` (llm-server.sh) | `unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M` |
 | `YAIST_LLM_PORT` (llm-server.sh) | `8080` |
 

@@ -77,7 +77,7 @@ pub enum Entry {
 #[derive(Clone, Debug)]
 pub enum UpdateStatus {
     Checking,
-    Known { packages: usize, security: usize, checked: std::time::Instant },
+    Known { packages: usize, security: usize, reboot: bool, checked: std::time::Instant },
     Failed(String),
 }
 
@@ -88,6 +88,11 @@ impl UpdateStatus {
             UpdateStatus::Known { packages, security, .. } => Some((*packages, *security)),
             _ => None,
         }
+    }
+
+    /// Installed changes wait for a reboot.
+    pub fn reboot_needed(&self) -> bool {
+        matches!(self, UpdateStatus::Known { reboot: true, .. })
     }
 }
 

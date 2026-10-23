@@ -10,7 +10,7 @@
 //!   yaist-helper snapper-status <number>
 //!   yaist-helper snapper-delete <number>
 //!   yaist-helper snapper-rollback <number>
-//!   yaist-helper migrate-leap <version> [repo-alias-to-disable…]
+//!   yaist-helper migrate-leap leap|leap-micro <version> [repo-alias-to-disable…]
 
 use std::path::Path;
 use std::process::{Command, ExitCode};
@@ -56,7 +56,7 @@ fn run(args: &[String]) -> R {
                 snapper(&["rollback", n])
             }
         }
-        Some("migrate-leap") => migrate_leap(arg(1)?, &args[2..]),
+        Some("migrate-leap") => migrate_leap(arg(1)?, arg(2)?, &args[3..]),
         _ => Err("usage: yaist-helper snapper-list|snapper-create|snapper-status|snapper-delete|snapper-rollback|migrate-leap …".into()),
     }
 }
@@ -113,45 +113,73 @@ fn x86_64_v2() -> bool {
     ["cx16", "sse4_1", "sse4_2", "popcnt"].iter().all(|f| flags.contains(f))
 }
 
-/// Upgrades Leap to a newer Leap, the way opensuse-migration-tool does: the
-/// repository definitions come from the *target* release's openSUSE-repos-Leap,
-/// then `zypper --releasever <target> dup`.
-fn migrate_leap(target: &str, disable: &[String]) -> R {
+/// Is this a transactional (immutable) system? Immutable Leap says so in
+/// os-release; a read-only root catches the rest.
+fn transactional() -> bool {
+    os_release("VARIANT_ID") == "transactional"
+        || os_release("ID_LIKE").split_whitespace().any(|l| l == "opensuse-microos")
+        || (Path::new("/usr/sbin/transactional-update").exists() && root_read_only())
+}
+
+/// Upgrades Leap (or Leap Micro) to a newer release, the way
+/// opensuse-migration-tool does: the repository definitions come from the
+/// *target* release's openSUSE-repos package, then
+/// `zypper --releasever <target> dup`. On transactional systems every step runs
+/// inside one chain of snapshots (`transactional-update --continue run`), which
+/// becomes active after a reboot.
+fn migrate_leap(flavour: &str, target: &str, disable: &[String]) -> R {
     validate::release_version(target)?;
-    if os_release("ID") != "opensuse-leap" {
-        return Err("this system is not openSUSE Leap".into());
+    let (id, repos_pkg) = match flavour {
+        "leap" => ("opensuse-leap", "openSUSE-repos-Leap"),
+        "leap-micro" => ("opensuse-leap-micro", "openSUSE-repos-LeapMicro"),
+        _ => return Err(format!("unknown Leap flavour {flavour}")),
+    };
+    if os_release("ID") != id {
+        return Err(format!("this system is not {id}"));
     }
     let current = os_release("VERSION_ID");
     if !validate::version_newer(target, &current) {
-        return Err(format!("Leap {target} is not newer than the installed {current}"));
+        return Err(format!("{target} is not newer than the installed {current}"));
     }
     let major: u32 = target.split('.').next().and_then(|m| m.parse().ok()).unwrap_or(0);
-    if std::env::consts::ARCH == "x86_64" && major >= 16 && !x86_64_v2() {
+    if flavour == "leap" && std::env::consts::ARCH == "x86_64" && major >= 16 && !x86_64_v2() {
         return Err(format!("Leap {target} needs an x86-64-v2 CPU; see https://en.opensuse.org/openSUSE:X86-64-Architecture-Levels"));
     }
-    if root_read_only() {
-        return Err("read-only root: run the upgrade inside `transactional-update shell`".into());
-    }
+    let url = match flavour {
+        "leap" => format!("https://download.opensuse.org/distribution/leap/{target}/repo/oss"),
+        _ => format!(
+            "https://download.opensuse.org/distribution/leap-micro/{target}/product/repo/openSUSE-Leap-Micro-{target}-{}/",
+            std::env::consts::ARCH
+        ),
+    };
+
+    let tx = transactional();
+    let step = |args: &[&str]| -> R {
+        if tx {
+            let mut full = vec!["--non-interactive", "--continue", "run", "/usr/bin/zypper", "--non-interactive"];
+            full.extend_from_slice(args);
+            exec("/usr/sbin/transactional-update", &full)
+        } else {
+            zypper(args)
+        }
+    };
 
     // Third-party repositories pinned to the old release break `zypper dup`.
     for alias in disable {
         validate::name(alias)?;
-        if zypper(&["modifyrepo", "--disable", "--", alias]).is_err() {
+        if step(&["modifyrepo", "--disable", "--", alias]).is_err() {
             println!("    (repository {alias} not found, skipped)");
         }
     }
-    zypper(&["install", "--force-resolution", "openSUSE-repos-Leap"])?;
-    zypper(&["refresh-services"])?;
-
-    let url = format!("https://download.opensuse.org/distribution/leap/{target}/repo/oss");
-    zypper(&["addrepo", "--refresh", "--", &url, TMP_REPO])?;
-    let installed = zypper(&["install", "--repo", TMP_REPO, "--force-resolution", "--from", TMP_REPO, "openSUSE-repos-Leap"]);
-    let _ = zypper(&["removerepo", "--", TMP_REPO]);
+    step(&["install", "--force-resolution", repos_pkg])?;
+    step(&["refresh-services"])?;
+    step(&["addrepo", "--refresh", "--", &url, TMP_REPO])?;
+    let installed = step(&["install", "--repo", TMP_REPO, "--force-resolution", "--from", TMP_REPO, repos_pkg]);
+    let _ = step(&["removerepo", "--", TMP_REPO]);
     installed?;
-    zypper(&["refresh-services"])?;
-
+    step(&["refresh-services"])?;
     // --releasever is a global option: it goes before the command.
-    zypper(&["--releasever", target, "dup", "--force-resolution", "--allow-vendor-change", "--download-in-advance"])?;
-    println!("==> upgraded to openSUSE Leap {target}; reboot to finish");
+    step(&["--releasever", target, "dup", "--force-resolution", "--allow-vendor-change", "--download-in-advance"])?;
+    println!("==> upgraded to {target}; reboot to finish");
     Ok(())
 }
