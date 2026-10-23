@@ -1,6 +1,6 @@
 [package]
 name = "yaist-agent"
-description = "yAIst agent: local LLM client and tool-calling loop over the action registry"
+description = "YAIST agent: local LLM client and tool-calling loop over the action registry"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -66,7 +66,7 @@ impl Distro {
     pub fn detect() -> Self {
         // /etc/os-release is usually a symlink to /usr/lib/os-release; read
         // either (os-release(5)).
-        // YAIST_OS_RELEASE points at another os-release, to see how yAIst
+        // YAIST_OS_RELEASE points at another os-release, to see how YAIST
         // behaves on other flavours (development and tests; plans only).
         // YAIST_END_OF_LIFE overrides the end-of-support date the same way.
         let mut d = if let Ok(path) = std::env::var("YAIST_OS_RELEASE") {

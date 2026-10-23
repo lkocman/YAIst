@@ -1,4 +1,4 @@
-//! yaist-helper: the privileged half of yAIst, started through pkexec.
+//! yaist-helper: the privileged half of YAIST, started through pkexec.
 //!
 //! It runs one fixed operation per invocation and re-validates every argument
 //! itself, since whoever starts it is not trusted. Multi-step operations (a

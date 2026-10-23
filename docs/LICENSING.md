@@ -1,6 +1,6 @@
 # Licensing
 
-yAIst is licensed under **Apache-2.0**. This page is for packagers and
+YAIST is licensed under **Apache-2.0**. This page is for packagers and
 legal reviewers (Cavil, the openSUSE packaging skill): what is in the source,
 what ends up in the binaries, and what is only downloaded at runtime.
 
@@ -20,7 +20,7 @@ what ends up in the binaries, and what is only downloaded at runtime.
 
 | Path | Licence | Notes |
 |---|---|---|
-| everything not listed below | Apache-2.0 | yAIst's own work |
+| everything not listed below | Apache-2.0 | YAIST's own work |
 | `apps/yaist-gui/src/theme.rs`, `widgets.rs` | Apache-2.0 | adapted from the ArtCraft launcher (MIT OR Apache-2.0, used under Apache-2.0); both copyright holders in `REUSE.toml` |
 | `assets/fonts/*.ttf` | OFL-1.1 | Inter, Archivo, Geist Mono; texts in `assets/fonts/OFL-*.txt` |
 
@@ -29,7 +29,7 @@ layout and widget style, in the openSUSE colour palette.
 
 ## The binaries
 
-Rust links its dependencies statically, so each binary's licence is yAIst's
+Rust links its dependencies statically, so each binary's licence is YAIST's
 plus whatever its crates add. Output of `scripts/license-report.sh` at the
 time of writing (x86_64 Linux target, normal dependencies only):
 
@@ -71,11 +71,11 @@ License:        Apache-2.0 AND BSD-3-Clause AND ISC AND MIT AND Unicode-3.0 AND 
 License:        Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND OFL-1.1 AND Unicode-3.0 AND Zlib
 ```
 
-## Compatibility with what yAIst talks to
+## Compatibility with what YAIST talks to
 
 - **Separate programs** (zypper, systemctl tools, useradd, pkexec) and **D-Bus
   services** (systemd, firewalld, polkit) are not linked; their licences do
-  not affect yAIst's.
+  not affect YAIST's.
 - **A future libzypp binding** (libzypp is GPL-2.0-or-later) would make the
   combined binary distributable under GPL-3.0 terms, since Apache-2.0 is
   compatible with GPLv3 but not GPLv2. Decide that consciously when the
@@ -83,16 +83,16 @@ License:        Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND
 - **GPL-2.0-only code cannot be linked** into an Apache-2.0 program; keep it
   out of the dependency tree (`deny.toml` already rejects it).
 
-## Not part of yAIst: distribution logos
+## Not part of YAIST: distribution logos
 
 The header wordmark and the welcome screen's logo are read at runtime from
 `/usr/share/pixmaps/distribution-logos/`, which every openSUSE flavour installs
-(`distribution-logos-openSUSE-*`, CC-BY-SA-4.0, openSUSE trademarks). yAIst
+(`distribution-logos-openSUSE-*`, CC-BY-SA-4.0, openSUSE trademarks). YAIST
 ships no logo files; without the package it shows the name as text. A package
-can `Recommends:` the logos. The chameleon on the welcome screen is yAIst's own
+can `Recommends:` the logos. The chameleon on the welcome screen is YAIST's own
 drawing, made in code.
 
-## Not part of yAIst: the model and its server
+## Not part of YAIST: the model and its server
 
 `scripts/llm-server.sh` downloads these on the user's machine. They are not in
 the source tarball, the binaries or the package.
@@ -102,7 +102,7 @@ the source tarball, the binaries or the package.
 | llama.cpp server | MIT | `ghcr.io/ggml-org/llama.cpp:server-vulkan` (Ubuntu-based image with its own package licences) |
 | Qwen3-4B-Instruct-2507 weights | Apache-2.0 | Qwen team; GGUF conversion by unsloth on Hugging Face |
 
-yAIst talks to any OpenAI-compatible server, so the model is a configuration
+YAIST talks to any OpenAI-compatible server, so the model is a configuration
 choice. Model choices must stay OSI-licensed (Apache-2.0 / MIT); Llama and
 Gemma licences do not qualify.
 

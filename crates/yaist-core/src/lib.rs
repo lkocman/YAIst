@@ -1,4 +1,4 @@
-//! yAIst core: the action model every client shares.
+//! YAIST core: the action model every client shares.
 //!
 //! An action is defined once ([`ActionSpec`]) and appears three ways: as an
 //! LLM tool, as a panel button with a generated form, and as a `/command`.

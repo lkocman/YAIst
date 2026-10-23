@@ -221,18 +221,19 @@ fn footer(ui: &mut Ui, v: &View) {
     let r = ui.max_rect();
     ui.painter().hline(r.x_range(), r.top() + 0.5, t.hairline());
     ui.horizontal_centered(|ui| {
-        widgets::hud(ui, "yAIst 0.1 · prototype · changes ask polkit", t.faint);
+        widgets::hud(ui, "YAIST 0.1 · prototype · changes ask polkit", t.faint);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             widgets::hud(ui, &format!("llm · {}", v.llm_url.trim_start_matches("http://")), t.faint);
         });
     });
 }
 
-/// "yAIst" with the AI in Geeko green.
+/// The YAIST wordmark, with the AI in Geeko green.
 fn wordmark(ui: &mut Ui, size: f32) {
     let t = Tokens::get(ui.ctx());
     let mut job = egui::text::LayoutJob::default();
-    for (text, color) in [("y", t.ink_strong), ("AI", t.accent), ("st", t.ink_strong)] {
+    for (text, accent) in yaist_ui::WORDMARK {
+        let color = if accent { t.accent } else { t.ink_strong };
         job.append(text, 0.0, egui::TextFormat { font_id: FontId::new(size, theme::display()), color, ..Default::default() });
     }
     ui.label(job);
@@ -522,7 +523,7 @@ impl App {
                         ui.label(RichText::new(sentence).size(13.0).color(colour));
                     }
                     ui.add_space(6.0);
-                    ui.label(RichText::new("Ask yAIst in plain language on the right, or start with one of these.").size(13.0).color(t.muted));
+                    ui.label(RichText::new("Ask YAIST in plain language on the right, or start with one of these.").size(13.0).color(t.muted));
                 });
             });
             ui.add_space(18.0);
@@ -799,7 +800,7 @@ impl App {
                 );
                 let edit = fu.add(
                     egui::TextEdit::singleline(&mut self.input)
-                        .hint_text(RichText::new("Ask yAIst, or type /help").color(t.faint))
+                        .hint_text(RichText::new("Ask YAIST, or type /help").color(t.faint))
                         .frame(Frame::NONE)
                         .desired_width(field.width() - 24.0)
                         .font(FontId::new(14.0, egui::FontFamily::Proportional)),

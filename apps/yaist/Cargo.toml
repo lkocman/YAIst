@@ -1,6 +1,6 @@
 [package]
 name = "yaist"
-description = "yAIst terminal client and CLI"
+description = "YAIST terminal client and CLI"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

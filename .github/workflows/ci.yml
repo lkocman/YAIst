@@ -17,7 +17,7 @@ env:
 
 jobs:
   build:
-    # yAIst targets every openSUSE, so build and test on the oldest and the
+    # YAIST targets every openSUSE, so build and test on the oldest and the
     # newest toolchain we support, with the distribution's own Rust.
     name: Build and test (${{ matrix.distro }})
     runs-on: ubuntu-latest

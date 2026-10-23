@@ -507,17 +507,23 @@ impl App {
             LlmStatus::Checking => self.badge("model · checking", t.muted),
             LlmStatus::Offline => self.badge("model · offline", t.warn),
         };
-        let left = Line::from(vec![
-            Span::styled(" y", self.style(t.ink_strong).add_modifier(Modifier::BOLD)),
-            Span::styled("AI", self.style(t.accent).add_modifier(Modifier::BOLD)),
-            Span::styled("st ", self.style(t.ink_strong).add_modifier(Modifier::BOLD)),
-            Span::styled(" │ ", self.style(t.line)),
-            self.tag("system", t.invert_bg),
-            Span::raw(" "),
-            self.hud(&s.distro.pretty, t.muted),
-            Span::raw("  "),
-            self.update_badge(s),
-        ]);
+        let mut left = vec![Span::raw(" ")];
+        left.extend(self.wordmark());
+        let left = Line::from(
+            [
+                left,
+                vec![
+                    Span::raw(" "),
+                    Span::styled(" │ ", self.style(t.line)),
+                    self.tag("system", t.invert_bg),
+                    Span::raw(" "),
+                    self.hud(&s.distro.pretty, t.muted),
+                    Span::raw("  "),
+                    self.update_badge(s),
+                ],
+            ]
+            .concat(),
+        );
         let right = Line::from(vec![llm, Span::raw(" ")]).right_aligned();
         let block = Block::new().borders(Borders::BOTTOM).border_style(self.style(t.line)).style(self.style(t.ink));
         let inner = block.inner(area);
@@ -640,6 +646,16 @@ impl App {
                 f.render_widget(Paragraph::new(text.clone()).style(self.style(t.ink)).wrap(ratatui::widgets::Wrap { trim: false }), content);
             }
         }
+    }
+
+    /// The YAIST wordmark, with the AI in Geeko green.
+    fn wordmark(&self) -> Vec<Span<'static>> {
+        yaist_ui::WORDMARK
+            .iter()
+            .map(|(text, accent)| {
+                Span::styled(*text, self.style(if *accent { self.t.accent } else { self.t.ink_strong }).add_modifier(Modifier::BOLD))
+            })
+            .collect()
     }
 
     fn update_colour(&self, level: UpdateLevel) -> Rgb {
@@ -835,7 +851,7 @@ impl App {
         f.render_widget(block, input_area);
         let prompt = Span::styled(" › ", self.style(if focused { t.accent } else { t.faint }).add_modifier(Modifier::BOLD));
         let line = if self.input.is_empty() {
-            Line::from(vec![prompt, Span::styled("Ask yAIst, or type /help", self.style(t.faint))])
+            Line::from(vec![prompt, Span::styled("Ask YAIST, or type /help", self.style(t.faint))])
         } else {
             Line::from(vec![prompt, Span::styled(self.input.clone(), self.style(t.ink_strong))])
         };
@@ -871,12 +887,10 @@ impl App {
                 }
             }
             Entry::Assistant { text: s, elapsed } => {
-                out.push(Line::from(vec![
-                    Span::styled(" y", self.style(t.ink_strong).add_modifier(Modifier::BOLD)),
-                    Span::styled("AI", self.style(t.accent).add_modifier(Modifier::BOLD)),
-                    Span::styled("st", self.style(t.ink_strong).add_modifier(Modifier::BOLD)),
-                    Span::styled(format!("  {:.1} s", elapsed.as_secs_f32()), self.style(t.faint)),
-                ]));
+                let mut spans = vec![Span::raw(" ")];
+                spans.extend(self.wordmark());
+                spans.push(Span::styled(format!("  {:.1} s", elapsed.as_secs_f32()), self.style(t.faint)));
+                out.push(Line::from(spans));
                 text(out, s, t.ink, 1);
             }
             Entry::Plan(p) => {

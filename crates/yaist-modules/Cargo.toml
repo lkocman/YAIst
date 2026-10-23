@@ -1,6 +1,6 @@
 [package]
 name = "yaist-modules"
-description = "yAIst system modules: system, users, services, firewall, SELinux, packages, repositories"
+description = "YAIST system modules: system, users, services, firewall, SELinux, packages, repositories"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

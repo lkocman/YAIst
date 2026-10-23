@@ -1,6 +1,12 @@
-//! The client model shared by the yAIst TUI and GUI: same modules, same
+//! The client model shared by the YAIST TUI and GUI: same modules, same
 //! panels, same plan cards, same conversation. A feature added here shows up
 //! in both.
+
+/// The name users see. YaST with AI inside; commands and crates stay `yaist`.
+pub const NAME: &str = "YAIST";
+
+/// The wordmark, piece by piece: (text, in the accent colour).
+pub const WORDMARK: [(&str, bool); 3] = [("Y", false), ("AI", true), ("ST", false)];
 
 pub mod palette;
 mod session;

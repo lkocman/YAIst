@@ -41,7 +41,7 @@ pub struct Plan {
     pub command: String,
     /// The same change done by hand in a terminal, for learning.
     pub shell: Vec<String>,
-    /// What yAIst actually ran (commands and D-Bus calls), once done.
+    /// What YAIST actually ran (commands and D-Bus calls), once done.
     pub executed: Vec<String>,
     pub status: PlanStatus,
     pub from_agent: bool,

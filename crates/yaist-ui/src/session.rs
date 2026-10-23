@@ -151,7 +151,7 @@ impl Session {
             .collect();
         let distro_name = if ctx.distro.pretty.is_empty() { "this system".to_owned() } else { ctx.distro.pretty.clone() };
         let mut conversation =
-            vec![Entry::Notice(format!("yAIst on {distro_name}. Ask in plain language, type /help for commands, or work in the panels."))];
+            vec![Entry::Notice(format!("YAIST on {distro_name}. Ask in plain language, type /help for commands, or work in the panels."))];
         if !ctx.distro.is_opensuse() {
             conversation
                 .push(Entry::Error(format!("This doesn't look like openSUSE ({}); package and repository modules may not work.", ctx.distro.id)));

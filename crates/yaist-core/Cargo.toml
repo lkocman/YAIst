@@ -1,6 +1,6 @@
 [package]
 name = "yaist-core"
-description = "yAIst action model: typed, risk-levelled actions shared by the LLM, panels and /commands"
+description = "YAIST action model: typed, risk-levelled actions shared by the LLM, panels and /commands"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

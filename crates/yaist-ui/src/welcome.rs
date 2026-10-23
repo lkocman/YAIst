@@ -6,7 +6,7 @@ use yaist_core::Distro;
 
 /// Every openSUSE flavour installs its logos here, under the same file names
 /// (distribution-logos-openSUSE-*). They are loaded from the system, not
-/// shipped with yAIst.
+/// shipped with YAIST.
 const LOGO_DIR: &str = "/usr/share/pixmaps/distribution-logos";
 
 /// The colour square logo, for the welcome screen.

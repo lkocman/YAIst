@@ -1,6 +1,6 @@
 [package]
 name = "yaist-ui"
-description = "yAIst shared client model: modules, panels, plan cards and conversation, used by both TUI and GUI"
+description = "YAIST shared client model: modules, panels, plan cards and conversation, used by both TUI and GUI"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

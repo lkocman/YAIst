@@ -140,11 +140,11 @@ fn lookup(name: &str) -> Option<User> {
     passwd().into_iter().find(|u| u.name == name)
 }
 
-/// Refuses system accounts: yAIst only manages people's accounts.
+/// Refuses system accounts: YAIST only manages people's accounts.
 fn human_user(name: &str) -> Result<User> {
     match lookup(name) {
         None => bail!("no such user: {name}"),
-        Some(u) if !(1000..60000).contains(&u.uid) => bail!("{name} is a system account (UID {}); yAIst only manages regular users", u.uid),
+        Some(u) if !(1000..60000).contains(&u.uid) => bail!("{name} is a system account (UID {}); YAIST only manages regular users", u.uid),
         Some(u) => Ok(u),
     }
 }

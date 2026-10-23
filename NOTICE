@@ -1,5 +1,5 @@
-yAIst
-Copyright (c) 2026 The yAIst contributors.
+YAIST
+Copyright (c) 2026 The YAIST contributors.
 Licensed under the Apache License, Version 2.0 (LICENSE). Per-file details are
 in REUSE.toml; the license texts are in LICENSES/.
 
@@ -8,7 +8,7 @@ Adapted code
 apps/yaist-gui/src/theme.rs and apps/yaist-gui/src/widgets.rs are adapted from
 the ArtCraft Launcher (https://github.com/storytold/craft-launcher),
 Copyright (c) 2026 ArtCraft Team and the ArtCraft Launcher contributors,
-MIT OR Apache-2.0, used here under Apache-2.0. yAIst uses no ArtCraft names,
+MIT OR Apache-2.0, used here under Apache-2.0. YAIST uses no ArtCraft names,
 logos or icons.
 
 Bundled fonts (embedded in yaist-gui unless built without the bundled-fonts feature)
@@ -28,7 +28,7 @@ scripts/license-report.sh lists them and the resulting SPDX expression.
 
 Not included
 
-The language model and the llama.cpp server are not part of yAIst's sources or
+The language model and the llama.cpp server are not part of YAIST's sources or
 binaries. They are downloaded when the user runs scripts/llm-server.sh; see
 docs/LICENSING.md for their licenses.
 

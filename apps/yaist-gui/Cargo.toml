@@ -1,6 +1,6 @@
 [package]
 name = "yaist-gui"
-description = "yAIst desktop client"
+description = "YAIST desktop client"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

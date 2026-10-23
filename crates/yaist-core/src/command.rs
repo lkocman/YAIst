@@ -79,7 +79,7 @@ pub fn format(spec: &ActionSpec, args: &Args) -> String {
     out
 }
 
-/// Tools whose familiar commands yAIst understands, so users can type what
+/// Tools whose familiar commands YAIST understands, so users can type what
 /// they know (or are learning) and still get a plan card.
 const TOOLS: &[&str] = &[
     "zypper",
@@ -156,7 +156,7 @@ pub fn translate(line: &str) -> Result<String> {
     };
     let q = |s: &str| quote(s);
     let joined = || quote(&args.join(" "));
-    let unknown = || anyhow!("yAIst doesn't know `{tool} {cmd}` yet; try /help");
+    let unknown = || anyhow!("YAIST doesn't know `{tool} {cmd}` yet; try /help");
     Ok(match *tool {
         "zypper" => match cmd {
             "in" | "install" => {

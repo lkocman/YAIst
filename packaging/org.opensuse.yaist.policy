@@ -8,10 +8,10 @@
   a distribution package needs a security review (polkit-default-privs).
 -->
 <policyconfig>
-  <vendor>yAIst</vendor>
+  <vendor>YAIST</vendor>
   <action id="org.opensuse.yaist.helper">
-    <description>Run yAIst system administration tasks</description>
-    <message>Authentication is required to manage the system with yAIst</message>
+    <description>Run YAIST system administration tasks</description>
+    <message>Authentication is required to manage the system with YAIST</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
