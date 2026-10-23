@@ -69,6 +69,6 @@ apps/yaist-gui         egui desktop app
 
 ## License
 
-MIT OR Apache-2.0. Bundled fonts are OFL-1.1. Details in
+Apache-2.0. Bundled fonts are OFL-1.1. Details in
 [docs/LICENSING.md](docs/LICENSING.md), [NOTICE](NOTICE) and
 [REUSE.toml](REUSE.toml).

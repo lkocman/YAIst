@@ -1,6 +1,6 @@
 # Licensing
 
-yAIst is licensed under **MIT OR Apache-2.0**. This page is for packagers and
+yAIst is licensed under **Apache-2.0**. This page is for packagers and
 legal reviewers (Cavil, the openSUSE packaging skill): what is in the source,
 what ends up in the binaries, and what is only downloaded at runtime.
 
@@ -8,11 +8,11 @@ what ends up in the binaries, and what is only downloaded at runtime.
 
 | File | What it says |
 |---|---|
-| `LICENSE-MIT`, `LICENSE-APACHE` | The project licence, at the repository root |
+| `LICENSE` | The project licence (Apache-2.0), at the repository root |
 | `LICENSES/` | Every licence text used anywhere in the tree (REUSE layout) |
 | `REUSE.toml` | Per-file copyright and SPDX identifier; `reuse lint` checks it |
 | `NOTICE` | Attribution that redistributors must keep |
-| `Cargo.toml` (workspace) | `license = "MIT OR Apache-2.0"`, inherited by every crate |
+| `Cargo.toml` (workspace) | `license = "Apache-2.0"`, inherited by every crate |
 | `deny.toml` | Allowed crate licences; `cargo deny check licenses` enforces it |
 | `scripts/license-report.sh` | Linked crates per binary and the suggested `License:` tag |
 
@@ -20,8 +20,8 @@ what ends up in the binaries, and what is only downloaded at runtime.
 
 | Path | Licence | Notes |
 |---|---|---|
-| everything not listed below | MIT OR Apache-2.0 | yAIst's own work |
-| `apps/yaist-gui/src/theme.rs`, `widgets.rs` | MIT OR Apache-2.0 | adapted from the ArtCraft launcher; both copyright holders in `REUSE.toml` |
+| everything not listed below | Apache-2.0 | yAIst's own work |
+| `apps/yaist-gui/src/theme.rs`, `widgets.rs` | Apache-2.0 | adapted from the ArtCraft launcher (MIT OR Apache-2.0, used under Apache-2.0); both copyright holders in `REUSE.toml` |
 | `assets/fonts/*.ttf` | OFL-1.1 | Inter, Archivo, Geist Mono; texts in `assets/fonts/OFL-*.txt` |
 
 No ArtCraft trademarks (name, logo, icons) are used. The look borrows only the
@@ -35,12 +35,14 @@ time of writing (x86_64 Linux target, normal dependencies only):
 
 | Binary | Crates linked | Suggested `License:` |
 |---|---|---|
-| `yaist` (TUI and CLI) | 152 | `(MIT OR Apache-2.0) AND Unicode-3.0 AND Zlib` |
-| `yaist-gui` | 251 | `(MIT OR Apache-2.0) AND ISC AND OFL-1.1 AND Unicode-3.0 AND Zlib` |
+| `yaist` (TUI and CLI) | 152 | `Apache-2.0 AND MIT AND Unicode-3.0 AND Zlib` |
+| `yaist-gui` | 251 | `Apache-2.0 AND ISC AND MIT AND OFL-1.1 AND Unicode-3.0 AND Zlib` |
 
 - **No copyleft is forced.** Two crates offer a copyleft licence as one `OR`
   choice: `r-efi` (`MIT OR Apache-2.0 OR LGPL-2.1-or-later`) and `self_cell`
-  (`Apache-2.0 OR GPL-2.0-only`). The permissive alternative applies.
+  (`Apache-2.0 OR GPL-2.0-only`). Both are used under Apache-2.0.
+- **MIT** appears because ~40 crates are MIT-only; crates offering
+  `MIT OR Apache-2.0` are used under Apache-2.0.
 - **OFL-1.1** in `yaist-gui` comes from the bundled fonts. Building with
   `--no-default-features` (no `bundled-fonts`) drops the embedded fonts; the
   binary then reads them from `/usr/share/yaist/fonts` (or `$YAIST_FONT_DIR`).
@@ -60,12 +62,24 @@ the vendored tree, pass `--offline`.
 # Legal-Review-Notice: Rust crates are linked statically. Derived with
 # scripts/license-report.sh (cargo tree -e normal -p yaist / -p yaist-gui):
 # no copyleft without a permissive alternative (r-efi and self_cell are
-# used under MIT/Apache-2.0); OFL-1.1 covers the fonts embedded in yaist-gui.
-License:        (MIT OR Apache-2.0) AND Unicode-3.0 AND Zlib
+# used under Apache-2.0); OFL-1.1 covers the fonts embedded in yaist-gui.
+License:        Apache-2.0 AND MIT AND Unicode-3.0 AND Zlib
 ...
 %package gui
-License:        (MIT OR Apache-2.0) AND ISC AND OFL-1.1 AND Unicode-3.0 AND Zlib
+License:        Apache-2.0 AND ISC AND MIT AND OFL-1.1 AND Unicode-3.0 AND Zlib
 ```
+
+## Compatibility with what yAIst talks to
+
+- **Separate programs** (zypper, systemctl tools, useradd, pkexec) and **D-Bus
+  services** (systemd, firewalld, polkit) are not linked; their licences do
+  not affect yAIst's.
+- **A future libzypp binding** (libzypp is GPL-2.0-or-later) would make the
+  combined binary distributable under GPL-3.0 terms, since Apache-2.0 is
+  compatible with GPLv3 but not GPLv2. Decide that consciously when the
+  binding lands, and record it in the spec's `License:`.
+- **GPL-2.0-only code cannot be linked** into an Apache-2.0 program; keep it
+  out of the dependency tree (`deny.toml` already rejects it).
 
 ## Not part of yAIst: the model and its server
 

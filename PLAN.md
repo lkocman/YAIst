@@ -294,5 +294,5 @@ eval/            prompt → expected action dataset + latency benchmark
 
 - "systemd firewall" assumed to mean **firewalld** (openSUSE default) — confirm.
 - ~~GUI toolkit~~: egui 0.36, the same as the ArtCraft launcher.
-- Project licence: MIT OR Apache-2.0 for now (see docs/LICENSING.md).
+- ~~Project licence~~: Apache-2.0 (see docs/LICENSING.md).
 - Reference hardware for the 5 s target.

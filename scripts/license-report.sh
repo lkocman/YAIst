@@ -25,7 +25,7 @@ import re, sys
 pkg = sys.argv[1]
 own = {"yaist", "yaist-core", "yaist-modules", "yaist-agent", "yaist-ui", "yaist-gui"}
 COPYLEFT = re.compile(r"\b(A?GPL|LGPL|MPL|EPL|CDDL|CC-BY-SA|SSPL|OSL)")
-PERMISSIVE_CHOICE = {"MIT", "Apache-2.0"}
+OURS = "Apache-2.0"
 exprs, flagged, needed = {}, [], set()
 for line in sys.stdin:
     line = line.strip()
@@ -38,14 +38,25 @@ for line in sys.stdin:
     lic = (lic or "UNKNOWN").replace("/", " OR ").strip()
     lic = re.sub(r"\s+", " ", lic)
     exprs.setdefault(lic, []).append(crate.replace(" (proc-macro)", ""))
-    # Top-level OR alternatives: one permissive choice settles the crate.
-    alternatives = [a.strip(" ()") for a in re.split(r"\s+OR\s+", lic)] if " AND " not in lic else [lic]
-    if any(a in PERMISSIVE_CHOICE for a in alternatives):
+    # A top-level OR choice: take Apache-2.0 when offered, else MIT, else the
+    # first permissive alternative (copyleft only when nothing else is offered).
+    if " AND " not in lic:
+        alternatives = [a.strip(" ()") for a in re.split(r"\s+OR\s+", lic)]
+        alternatives = [a.split(" WITH ")[0] for a in alternatives]
+        if OURS in alternatives:
+            continue
+        free = sorted((a for a in alternatives if not COPYLEFT.search(a)), key=lambda a: a != "MIT")
+        if free:
+            needed.add(free[0])
+            continue
+        flagged.append((crate, lic))
+        needed.update(alternatives)
         continue
     if COPYLEFT.search(lic) or lic == "UNKNOWN":
         flagged.append((crate, lic))
-    for term in re.split(r"\s+(?:AND|OR|WITH)\s+", lic.replace("(", "").replace(")", "")):
-        if term not in PERMISSIVE_CHOICE and term != "LLVM-exception":
+    for term in re.split(r"\s+(?:AND|WITH)\s+", lic.replace("(", "").replace(")", "")):
+        term = term.split(" OR ")[0] if " OR " in term else term
+        if term != OURS and term != "LLVM-exception":
             needed.add(term)
 print(f"== {pkg}: {sum(len(v) for v in exprs.values())} third-party crates linked")
 for lic, crates in sorted(exprs.items(), key=lambda kv: -len(kv[1])):
@@ -58,7 +69,7 @@ if flagged:
         print(f"    {crate}: {lic}")
 else:
     print("  no copyleft without a permissive choice")
-tag = " AND ".join(["(MIT OR Apache-2.0)"] + sorted(needed))
+tag = " AND ".join([OURS] + sorted(needed))
 print(f"  suggested License: {tag}")
 print()
 ' "$pkg"
