@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds YAIST inside a rootless openSUSE container, for machines without a
+# Builds YAiST inside a rootless openSUSE container, for machines without a
 # Rust toolchain. Arguments go to cargo (default: build). The binaries land
 # in target/ as usual and run on the distribution the image is based on
 # (Leap 16.0 by default; edit scripts/build.Containerfile for another).

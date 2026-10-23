@@ -66,7 +66,7 @@ impl Distro {
     pub fn detect() -> Self {
         // /etc/os-release is usually a symlink to /usr/lib/os-release; read
         // either (os-release(5)).
-        // YAIST_OS_RELEASE points at another os-release, to see how YAIST
+        // YAIST_OS_RELEASE points at another os-release, to see how YAiST
         // behaves on other flavours (development and tests; plans only).
         // YAIST_END_OF_LIFE overrides the end-of-support date the same way.
         let mut d = if let Ok(path) = std::env::var("YAIST_OS_RELEASE") {
@@ -215,6 +215,24 @@ impl Context {
     /// (zypper reports "nothing found" or "some repos skipped" this way).
     pub async fn run_ok(&self, argv: &[&str], ok: &[i32]) -> Result<String> {
         run_command(argv, ok).await
+    }
+
+    /// Opens a URL in the user's browser. Unlike other commands this keeps the
+    /// environment (display, session bus), so callers must only pass vetted
+    /// URLs.
+    pub async fn open_in_browser(&self, url: &str) -> Result<()> {
+        let status = tokio::process::Command::new("/usr/bin/xdg-open")
+            .arg(url)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .context("running xdg-open")?;
+        if !status.success() {
+            bail!("xdg-open could not open {url} ({status})");
+        }
+        Ok(())
     }
 
     /// Runs a command and returns only its exit code (for tools that answer

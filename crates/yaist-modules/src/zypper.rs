@@ -48,6 +48,55 @@ pub async fn reboot_needed(ctx: &Context) -> bool {
     !ctx.distro.transactional && ctx.exit_code(&["/usr/bin/zypper", "needs-rebooting"]).await.ok() == Some(102)
 }
 
+/// openSUSE's non-oss repository (freely distributable, not open source:
+/// Steam, some firmware and fonts): its alias and whether it is enabled.
+/// Debug and source variants don't count.
+pub async fn non_oss(ctx: &Context) -> Result<Option<(String, bool)>> {
+    let xml = query(ctx, &["repos"]).await?;
+    let doc = parse(&xml)?;
+    let found = doc
+        .descendants()
+        .filter(|n| n.has_tag_name("repo"))
+        .filter_map(|r| {
+            let alias = r.attribute("alias")?.to_owned();
+            let url = r.children().find(|c| c.has_tag_name("url")).and_then(|u| u.text()).unwrap_or("");
+            let is_non_oss = alias.contains("non-oss") || url.contains("/repo/non-oss");
+            let variant = alias.contains("debug") || alias.contains("source") || url.contains("/debug/") || url.contains("/source/");
+            (is_non_oss && !variant).then(|| (alias, r.attribute("enabled") == Some("1")))
+        })
+        .max_by_key(|(_, enabled)| *enabled);
+    Ok(found)
+}
+
+/// The official non-oss URL for this distribution, with zypper's variables so
+/// it keeps working after upgrades.
+pub fn non_oss_url(d: &yaist_core::Distro) -> String {
+    if d.id.contains("slowroll") || d.pretty.contains("Slowroll") {
+        "http://cdn.opensuse.org/slowroll/repo/non-oss/".into()
+    } else if d.rolling {
+        "http://cdn.opensuse.org/tumbleweed/repo/non-oss/".into()
+    } else {
+        "http://cdn.opensuse.org/distribution/leap/${releasever}/repo/non-oss/$basearch".into()
+    }
+}
+
+/// Makes sure non-oss is configured and enabled; returns what was done.
+pub async fn ensure_non_oss(ctx: &Context) -> Result<Option<String>> {
+    match non_oss(ctx).await? {
+        Some((_, true)) => Ok(None),
+        Some((alias, false)) => {
+            change(ctx, &["modifyrepo", "--enable", "--", &alias]).await?;
+            Ok(Some(format!("enabled {alias}")))
+        }
+        None => {
+            let url = non_oss_url(&ctx.distro);
+            change(ctx, &["addrepo", "--refresh", "--", &url, "repo-non-oss"]).await?;
+            change(ctx, &["refresh", "--repo", "repo-non-oss"]).await?;
+            Ok(Some("added repo-non-oss".into()))
+        }
+    }
+}
+
 pub fn parse(xml: &str) -> Result<roxmltree::Document<'_>> {
     roxmltree::Document::parse(xml).map_err(|e| anyhow!("could not read zypper's output: {e}"))
 }

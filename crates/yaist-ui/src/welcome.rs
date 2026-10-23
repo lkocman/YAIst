@@ -6,7 +6,7 @@ use yaist_core::Distro;
 
 /// Every openSUSE flavour installs its logos here, under the same file names
 /// (distribution-logos-openSUSE-*). They are loaded from the system, not
-/// shipped with YAIST.
+/// shipped with YAiST.
 const LOGO_DIR: &str = "/usr/share/pixmaps/distribution-logos";
 
 /// The colour square logo, for the welcome screen.
@@ -161,24 +161,7 @@ pub fn suggestions(d: &Distro) -> Vec<&'static str> {
     s
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Link {
-    pub title: &'static str,
-    pub text: &'static str,
-    pub url: &'static str,
-}
-
-pub const LINKS: &[Link] = &[
-    Link { title: "Documentation", text: "Start-up guide, reference and how-tos", url: "https://doc.opensuse.org/" },
-    Link { title: "Release notes", text: "What is new and what to watch out for", url: "https://doc.opensuse.org/release-notes/" },
-    Link { title: "Wiki", text: "Community knowledge and support database", url: "https://en.opensuse.org/Portal" },
-    Link { title: "Forums", text: "Ask questions and help others", url: "https://forums.opensuse.org/" },
-    Link { title: "Chat", text: "Talk to the community on Matrix", url: "https://chat.opensuse.org/" },
-    Link { title: "Software", text: "Find packages, including community builds", url: "https://software.opensuse.org/" },
-    Link { title: "Open Build Service", text: "Build and share your own packages", url: "https://build.opensuse.org/" },
-    Link { title: "Report a bug", text: "Bugzilla, where problems get fixed", url: "https://bugzilla.opensuse.org/" },
-    Link { title: "News", text: "Project news and announcements", url: "https://news.opensuse.org/" },
-];
+pub use yaist_modules::community::{link, Link, FEATURED, GROUPS, LINKS};
 
 /// The chameleon for terminals: our own drawing, not the Geeko logo.
 pub const ASCII_CHAMELEON: &[&str] = &[

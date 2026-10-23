@@ -1,6 +1,6 @@
 [package]
 name = "yaist-gui"
-description = "YAIST desktop client"
+description = "YAiST desktop client"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,7 +13,9 @@ serde_json = { workspace = true }
 eframe = { workspace = true }
 egui = { workspace = true }
 # Distribution logos are SVG files installed by distribution-logos-openSUSE-*.
-egui_extras = { workspace = true, features = ["svg", "file"] }
+egui_extras = { workspace = true, features = ["svg", "file", "image"] }
+# PNG decoding for the app icon.
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [features]
 default = ["bundled-fonts"]

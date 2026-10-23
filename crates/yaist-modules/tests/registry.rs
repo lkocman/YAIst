@@ -107,6 +107,7 @@ fn every_action_teaches_its_terminal_command() {
                     "app" => "org.videolan.VLC",
                     "address" => "192.168.1.20",
                     "uri" => "ipp://printer.local/ipp/print",
+                    "link" => "https://chat.opensuse.org/",
                     _ => "example",
                 },
             };

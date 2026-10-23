@@ -42,6 +42,9 @@ pub struct Tokens {
     pub line: Rgb,
     pub line_strong: Rgb,
     pub accent: Rgb,
+    /// YAiST's own colour, the cyan "Ai" of the logo (Turquoise Teal, the
+    /// palette's nearest to the logo's #3AFADD).
+    pub brand: Rgb,
     pub invert_bg: Rgb,
     pub invert_fg: Rgb,
     pub good: Rgb,
@@ -62,6 +65,7 @@ impl Tokens {
             line: blend(MAPLE_MAROON, BAGEL_BEIGE, 0.16),
             line_strong: blend(MAPLE_MAROON, BAGEL_BEIGE, 0.40),
             accent: GEEKO_GREEN,
+            brand: TURQUOISE_TEAL,
             invert_bg: BAGEL_BEIGE,
             invert_fg: MAPLE_MAROON,
             good: GEEKO_GREEN,
@@ -84,6 +88,7 @@ impl Tokens {
             line: blend(BAGEL_BEIGE, MAPLE_MAROON, 0.16),
             line_strong: blend(BAGEL_BEIGE, MAPLE_MAROON, 0.40),
             accent: blend(GEEKO_GREEN, MAPLE_MAROON, 0.35),
+            brand: blend(TURQUOISE_TEAL, MAPLE_MAROON, 0.30),
             invert_bg: MAPLE_MAROON,
             invert_fg: BAGEL_BEIGE,
             good: blend(GEEKO_GREEN, MAPLE_MAROON, 0.40),

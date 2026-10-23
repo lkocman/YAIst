@@ -136,7 +136,7 @@ pub fn register(reg: &mut Registry) {
     });
     reg.action(TEST_PAGE, |ctx, args| async move {
         let p = args.str("printer");
-        ctx.run(&["/usr/bin/lp", "-d", p, "-t", "YAIST test page", "/usr/share/cups/data/testprint"]).await?;
+        ctx.run(&["/usr/bin/lp", "-d", p, "-t", "YAiST test page", "/usr/share/cups/data/testprint"]).await?;
         Ok(Output::Done(format!("Sent a test page to {p}")))
     });
     reg.action(SET_DEFAULT, |ctx, args| async move {

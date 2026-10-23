@@ -12,7 +12,7 @@ use yaist_core::{ActionSpec, Context, Distro, ModuleSpec, Output, Param, Registr
 use crate::{flatpak, helper, packages, zypper};
 
 const STEAM_FLATPAK: &str = "com.valvesoftware.Steam";
-const ITEMS: &[&str] = &["graphics", "steam", "controllers", "selinux", "gamemode", "openh264", "flathub"];
+const ITEMS: &[&str] = &["graphics", "non-oss", "steam", "controllers", "selinux", "gamemode", "openh264", "flathub"];
 
 const STATUS: ActionSpec = ActionSpec {
     id: "media.status",
@@ -25,7 +25,7 @@ const STATUS: ActionSpec = ActionSpec {
 const SET_UP: ActionSpec = ActionSpec {
     id: "media.set_up",
     title: "Set up",
-    description: "Set up one item of the gaming and media checklist: graphics (Vulkan driver, or NVIDIA drivers), steam, controllers (steam-devices), selinux (gaming policy), gamemode, openh264 (official H.264 codec) or flathub.",
+    description: "Set up one item of the gaming and media checklist: graphics (Vulkan driver, or NVIDIA drivers), non-oss (the repository Steam comes from on Tumbleweed), steam, controllers (steam-devices), selinux (gaming policy), gamemode, openh264 (official H.264 codec) or flathub.",
     risk: Risk::Change,
     params: &[Param::choice("item", ITEMS, "What to set up")],
 };
@@ -195,6 +195,15 @@ async fn status(ctx: &Context) -> Result<Output> {
     } else {
         (flatpak::app_installed(ctx, STEAM_FLATPAK).await, "Flatpak from Flathub, for your user")
     };
+    if steam_rpm(d) {
+        let non_oss = zypper::non_oss(ctx).await.ok().flatten();
+        let (state, detail) = match &non_oss {
+            Some((alias, true)) => ("enabled", format!("{alias}: Steam comes from here")),
+            Some((alias, false)) => ("missing", format!("{alias} is disabled; Steam comes from here")),
+            None => ("missing", "openSUSE's non-oss repository is not set up; Steam comes from here".into()),
+        };
+        row(&mut t, "non-oss", state, detail);
+    }
     row(&mut t, "steam", if steam_ok { "installed" } else { "missing" }, how.into());
     row(
         &mut t,
@@ -240,6 +249,7 @@ async fn set_up(ctx: &Context, items: &[&str]) -> Result<Output> {
     let mut nvidia = false;
     let mut steam_flatpak = false;
     let mut flathub = false;
+    let mut non_oss = false;
     for item in items {
         match *item {
             "graphics" => {
@@ -253,8 +263,12 @@ async fn set_up(ctx: &Context, items: &[&str]) -> Result<Output> {
                     bail!("no AMD, Intel or NVIDIA GPU found");
                 }
             }
-            "steam" if steam_rpm(d) => rpms.push("steam"),
+            "steam" if steam_rpm(d) => {
+                non_oss = true;
+                rpms.push("steam");
+            }
             "steam" => steam_flatpak = true,
+            "non-oss" => non_oss = true,
             "controllers" => rpms.push("steam-devices"),
             "selinux" if selinux_enabled() => rpms.push("selinux-policy-targeted-gaming"),
             "selinux" => {}
@@ -274,13 +288,13 @@ async fn set_up(ctx: &Context, items: &[&str]) -> Result<Output> {
         helper::run(ctx, &["nvidia-setup", if d.rolling { "tumbleweed" } else { "leap" }]).await?;
         done.push("NVIDIA drivers".to_owned());
     }
-    if !rpms.is_empty() {
-        if rpms.contains(&"steam") {
-            let repos = zypper::query(ctx, &["repos"]).await?;
-            if !repos.contains("non-oss") {
-                bail!("Steam is in the non-oss repository, which is not configured; add or enable it first");
-            }
+    if non_oss {
+        // Steam lives in non-oss; enable (or add) it before installing.
+        if let Some(what) = zypper::ensure_non_oss(ctx).await? {
+            done.push(format!("non-oss ({what})"));
         }
+    }
+    if !rpms.is_empty() {
         packages::install_rpms(ctx, &rpms).await?;
         done.push(rpms.join(", "));
     }
@@ -313,7 +327,11 @@ fn shell(items: &[&str], d: &Distro) -> Vec<String> {
                 let z = if d.transactional { "sudo transactional-update --continue run zypper" } else { "sudo zypper" };
                 cmds.push(format!("# NVIDIA: {z} install {nv} && {z} refresh-services && {z} install-new-recommends"));
             }
-            "steam" if steam_rpm(d) => rpms.push("steam"),
+            "steam" if steam_rpm(d) => {
+                cmds.push("sudo zypper modifyrepo --enable openSUSE:repo-non-oss   # Steam is in non-oss".into());
+                rpms.push("steam");
+            }
+            "non-oss" => cmds.push("sudo zypper modifyrepo --enable openSUSE:repo-non-oss".into()),
             "steam" => {
                 cmds.push(format!("flatpak remote-add --user --if-not-exists {} {}", flatpak::FLATHUB, flatpak::FLATHUB_URL));
                 cmds.push(format!("flatpak install --user {} {STEAM_FLATPAK}", flatpak::FLATHUB));

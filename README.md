@@ -1,4 +1,4 @@
-# YAIST
+# YAiST
 
 A local, AI-assisted successor to YaST for openSUSE. Manage the system by
 asking in plain language, by typing `/commands`, or in classic panels. All
@@ -7,7 +7,7 @@ three run the same actions, and every change waits for your confirmation.
 - Runs on any openSUSE: Leap, Tumbleweed, Slowroll and the immutable variants
   (immutable Leap, Leap Micro, MicroOS, Aeon, Kalpa). Updates use `zypper up`,
   `zypper dup` or `transactional-update --continue` as fits; on immutable
-  systems every change lands in one new snapshot, and YAIST shows when a
+  systems every change lands in one new snapshot, and YAiST shows when a
   reboot is needed to use it.
 - The model runs locally (llama.cpp); nothing leaves the machine.
 - Terminal UI and desktop GUI with the same layout.
@@ -17,7 +17,7 @@ Status: **prototype**. See [PLAN.md](PLAN.md) for the design and
 
 ## Modules
 
-YAIST opens on a **welcome screen** that takes over from openSUSE-welcome:
+YAiST opens on a **welcome screen** that takes over from openSUSE-welcome:
 starting points (updates, snapshot, software, users, firewall, new releases),
 questions to try, the system at a glance and links into the community.
 
@@ -48,7 +48,10 @@ Familiar commands work in the prompt too and show what they map to, so
 `zypper in fish`, `sudo systemctl restart sshd` or `zypper --releasever 16.1
 dup` give the same confirmation card as asking in plain language. Every plan
 card shows the equivalent terminal command, and after a change, exactly what
-YAIST executed.
+YAiST executed.
+
+To get YAiST into the desktop's app menu with its icon (development build,
+no root): `scripts/dev-install-desktop.sh`.
 
 Command line:
 

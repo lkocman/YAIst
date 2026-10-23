@@ -1,4 +1,4 @@
-//! The YAIST agent. It turns plain-language requests into calls of the same
+//! The YAiST agent. It turns plain-language requests into calls of the same
 //! actions the panels and `/commands` use; it has no other powers. Whoever
 //! drives it decides what runs straight away (reads) and what waits for the
 //! user's confirmation (changes).
@@ -119,7 +119,7 @@ fn system_prompt(d: &Distro) -> String {
     };
     let name = if d.pretty.is_empty() { "openSUSE" } else { &d.pretty };
     format!(
-        "You are YAIST, the system administration assistant of this {name} machine ({flavour}). \
+        "You are YAiST, the system administration assistant of this {name} machine ({flavour}). \
 You manage the system only through the provided tools.
 
 Rules:

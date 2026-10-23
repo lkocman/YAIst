@@ -1,6 +1,7 @@
 //! The system modules. Each registers a [`yaist_core::ModuleSpec`] and its
 //! actions; clients never call these directly, only through the registry.
 
+pub mod community;
 mod firewall;
 mod flatpak;
 mod helper;
@@ -24,6 +25,7 @@ pub fn registry() -> Registry {
     let mut reg = Registry::default();
     // The start screen; clients draw it themselves around the system overview.
     reg.module(ModuleSpec { id: "welcome", title: "Welcome", tagline: "Start here", overview: "system.overview", row_actions: &[] });
+    community::register(&mut reg);
     system::register(&mut reg);
     users::register(&mut reg);
     services::register(&mut reg);

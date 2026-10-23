@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=YAiST
+GenericName=System Administration
+Comment=Set up and look after your openSUSE system, in plain language
+Exec=yaist-gui
+Icon=org.opensuse.yaist
+Terminal=false
+Categories=System;Settings;
+Keywords=YaST;system;settings;firewall;packages;users;printer;updates;
+StartupWMClass=org.opensuse.yaist

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Licence report for what each YAIST binary actually links, following the
+# Licence report for what each YAiST binary actually links, following the
 # openSUSE packaging skill's Rust procedure: `cargo tree -e normal` scoped to
 # the built package and a Linux target, then every crate's `license` field.
 #

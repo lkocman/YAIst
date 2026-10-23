@@ -13,6 +13,8 @@ use crate::theme::{self, Tokens};
 use crate::widgets::{self, Kind};
 
 const SIDEBAR_W: f32 = 264.0;
+/// The app icon, shown next to the wordmark.
+const APP_ICON: &[u8] = include_bytes!("../../../assets/icons/hicolor/64x64/apps/org.opensuse.yaist.png");
 const ROW_H: f32 = 40.0;
 
 /// What the user did this frame; applied once drawing is done.
@@ -177,7 +179,9 @@ impl App {
         ui.painter().hline(r.x_range(), r.bottom() - 0.5, t.hairline());
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
-            ui.add_space(22.0);
+            ui.add_space(18.0);
+            ui.add(egui::Image::from_bytes("bytes://yaist-icon.png", APP_ICON).fit_to_exact_size(vec2(32.0, 32.0)));
+            ui.add_space(10.0);
             wordmark(ui, 21.0);
             ui.add_space(20.0);
             widgets::rule(ui, theme::HEADER_H);
@@ -221,19 +225,19 @@ fn footer(ui: &mut Ui, v: &View) {
     let r = ui.max_rect();
     ui.painter().hline(r.x_range(), r.top() + 0.5, t.hairline());
     ui.horizontal_centered(|ui| {
-        widgets::hud(ui, "YAIST 0.1 · prototype · changes ask polkit", t.faint);
+        widgets::hud(ui, "YAiST 0.1 · prototype · changes ask polkit", t.faint);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             widgets::hud(ui, &format!("llm · {}", v.llm_url.trim_start_matches("http://")), t.faint);
         });
     });
 }
 
-/// The YAIST wordmark, with the AI in Geeko green.
+/// The YAiST wordmark, with the AI in Geeko green.
 fn wordmark(ui: &mut Ui, size: f32) {
     let t = Tokens::get(ui.ctx());
     let mut job = egui::text::LayoutJob::default();
     for (text, accent) in yaist_ui::WORDMARK {
-        let color = if accent { t.accent } else { t.ink_strong };
+        let color = if accent { t.brand } else { t.ink_strong };
         job.append(text, 0.0, egui::TextFormat { font_id: FontId::new(size, theme::display()), color, ..Default::default() });
     }
     ui.label(job);
@@ -306,6 +310,9 @@ impl App {
         let m = &v.modules[i];
         if m.spec.id == "welcome" {
             return self.welcome_page(ui, v);
+        }
+        if m.spec.id == "community" {
+            return self.community_page(ui, v);
         }
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
@@ -523,7 +530,7 @@ impl App {
                         ui.label(RichText::new(sentence).size(13.0).color(colour));
                     }
                     ui.add_space(6.0);
-                    ui.label(RichText::new("Ask YAIST in plain language on the right, or start with one of these.").size(13.0).color(t.muted));
+                    ui.label(RichText::new("Ask YAiST in plain language on the right, or start with one of these.").size(13.0).color(t.muted));
                 });
             });
             ui.add_space(18.0);
@@ -582,37 +589,23 @@ impl App {
             }
             ui.add_space(24.0);
 
-            widgets::eyebrow(ui, "04", "openSUSE community");
+            widgets::eyebrow(ui, "04", "Join the community");
             ui.add_space(10.0);
-            let link_w = (ui.available_width() / cols as f32).floor();
-            for chunk in welcome::LINKS.chunks(cols) {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    for link in chunk {
-                        let (rect, resp) = ui.allocate_exact_size(vec2(link_w, 64.0), egui::Sense::click());
-                        let hovered = resp.hovered();
-                        let p = ui.painter();
-                        p.rect(rect, CornerRadius::ZERO, if hovered { t.sunken } else { t.bg }, t.hairline(), egui::StrokeKind::Inside);
-                        p.text(
-                            rect.min + vec2(16.0, 14.0),
-                            egui::Align2::LEFT_TOP,
-                            format!("{} ↗", link.title),
-                            FontId::new(14.5, theme::semibold()),
-                            if hovered { t.accent } else { t.ink_strong },
-                        );
-                        p.text(
-                            rect.min + vec2(16.0, 36.0),
-                            egui::Align2::LEFT_TOP,
-                            link.text,
-                            FontId::new(12.5, egui::FontFamily::Proportional),
-                            t.muted,
-                        );
-                        if resp.on_hover_text(link.url).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                            ui.ctx().open_url(egui::OpenUrl::new_tab(link.url));
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
+                for title in welcome::FEATURED {
+                    if let Some(l) = welcome::link(title) {
+                        if widgets::button(ui, &format!("{} ↗", l.title), Kind::Secondary, 0.0).on_hover_text(l.text).clicked() {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(l.url));
                         }
                     }
-                });
-            }
+                }
+                if widgets::button(ui, "All community places", Kind::Primary, 0.0).clicked() {
+                    if let Some(i) = v.modules.iter().position(|m| m.spec.id == "community") {
+                        self.acts.push(Act::Select(i));
+                    }
+                }
+            });
             ui.add_space(24.0);
         });
     }
@@ -714,6 +707,58 @@ impl App {
         ui.painter().rect_filled(egui::Rect::from_min_size(r.min, vec2(4.0, r.height())), CornerRadius::ZERO, colour);
     }
 
+    /// The community places as grouped cards that open in the browser.
+    fn community_page(&mut self, ui: &mut Ui, v: &View) {
+        let t = Tokens::get(ui.ctx());
+        let i = v.selected;
+        egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                widgets::tag(ui, &format!("{i:02}"), t.module(i), t.invert_fg);
+                widgets::eyebrow(ui, "module", "Community");
+            });
+            ui.add_space(12.0);
+            ui.label(RichText::new("openSUSE community").font(FontId::new(32.0, theme::display())).color(t.ink_strong));
+            ui.label(
+                RichText::new("Talk to people, thank them, find events and help, and see how openSUSE is built and tested.")
+                    .size(14.0)
+                    .color(t.muted),
+            );
+            ui.add_space(18.0);
+            let cols = if ui.available_width() > 720.0 { 3 } else { 2 };
+            for (g, group) in welcome::GROUPS.iter().enumerate() {
+                widgets::eyebrow(ui, &format!("{:02}", g + 1), group);
+                ui.add_space(8.0);
+                let links: Vec<_> = welcome::LINKS.iter().filter(|l| l.group == *group).collect();
+                let w = (ui.available_width() / cols as f32).floor();
+                for chunk in links.chunks(cols) {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        for l in chunk {
+                            let (rect, resp) = ui.allocate_exact_size(vec2(w, 76.0), egui::Sense::click());
+                            let hovered = resp.hovered();
+                            let p = ui.painter();
+                            p.rect(rect, CornerRadius::ZERO, if hovered { t.sunken } else { t.bg }, t.hairline(), egui::StrokeKind::Inside);
+                            p.text(
+                                rect.min + vec2(16.0, 14.0),
+                                egui::Align2::LEFT_TOP,
+                                format!("{} ↗", l.title),
+                                FontId::new(15.0, theme::semibold()),
+                                if hovered { t.accent } else { t.ink_strong },
+                            );
+                            let text = ui.painter().layout(l.text.to_owned(), FontId::new(12.5, egui::FontFamily::Proportional), t.muted, w - 32.0);
+                            ui.painter().galley(rect.min + vec2(16.0, 38.0), text, t.muted);
+                            if resp.on_hover_text(l.url).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                ui.ctx().open_url(egui::OpenUrl::new_tab(l.url));
+                            }
+                        }
+                    });
+                }
+                ui.add_space(18.0);
+            }
+        });
+    }
+
     fn start(&mut self, start: Start, v: &View) {
         match start {
             Start::Module(id) => {
@@ -800,7 +845,7 @@ impl App {
                 );
                 let edit = fu.add(
                     egui::TextEdit::singleline(&mut self.input)
-                        .hint_text(RichText::new("Ask YAIST, or type /help").color(t.faint))
+                        .hint_text(RichText::new("Ask YAiST, or type /help").color(t.faint))
                         .frame(Frame::NONE)
                         .desired_width(field.width() - 24.0)
                         .font(FontId::new(14.0, egui::FontFamily::Proportional)),
@@ -946,7 +991,7 @@ impl App {
             }
             if !p.executed.is_empty() {
                 ui.add_space(6.0);
-                ui.collapsing(RichText::new("WHAT YAIST RAN").family(theme::mono()).size(11.0).color(t.faint), |ui| {
+                ui.collapsing(RichText::new("WHAT YAiST RAN").family(theme::mono()).size(11.0).color(t.faint), |ui| {
                     for c in &p.executed {
                         ui.label(RichText::new(c).family(theme::mono()).size(11.5).color(t.muted));
                     }

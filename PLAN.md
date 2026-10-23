@@ -1,4 +1,4 @@
-# YAIST — plan
+# YAiST — plan
 
 A local, AI-assisted successor to YaST for openSUSE. Users manage the system by
 talking to an agent, or through classic panels/forms. Native TUI and GUI, no web
@@ -39,7 +39,7 @@ snapper snapshots, migration module, router for tool subsets, eval set.
 
 ## Core principle: one action set, every UI
 
-Everything the user can do in YAIST is a typed **action** in a single registry.
+Everything the user can do in YAiST is a typed **action** in a single registry.
 Every action is reachable from the **input prompt**, and every panel/button is
 just another way to fill in and invoke the same action.
 
@@ -94,7 +94,7 @@ view model (modules, panels, plan cards, conversation), so a feature added to
 one appears in the other.
 
 ```
-┌ YAIST ─────────────────────────────────────────────────────────────────┐
+┌ YAiST ─────────────────────────────────────────────────────────────────┐
 │ Modules        │ Firewall · zone: public                               │
 │ ▸ System       │ ┌ Open ports ────────────┐ ┌ Services ─────────────┐ │
 │   Users        │ │ 22/tcp   ssh       [x] │ │ ssh            [x]    │ │
@@ -103,7 +103,7 @@ one appears in the other.
 │   SELinux      │ └────────────────────────┘ └───────────────────────┘ │
 │   Packages     ├───────────────────────────────────────────────────────┤
 │   Repositories │ you › open http for the web server                    │
-│   Migration    │ YAIST › Plan: firewall.allow_service                  │
+│   Migration    │ YAiST › Plan: firewall.allow_service                  │
 │                │         zone=public service=http   risk: change       │
 │                │         [Confirm]  [Edit]  [Cancel]                   │
 │                ├───────────────────────────────────────────────────────┤

@@ -49,6 +49,14 @@ const ADD_FLATHUB: ActionSpec = ActionSpec {
     params: &[],
 };
 
+const NON_OSS: ActionSpec = ActionSpec {
+    id: "repos.enable_non_oss",
+    title: "Enable non-oss",
+    description: "Make sure openSUSE's non-oss repository is set up and enabled: freely distributable software that is not open source, such as Steam, some firmware and fonts.",
+    risk: Risk::Change,
+    params: &[],
+};
+
 const ENABLE: ActionSpec = ActionSpec {
     id: "repos.enable",
     title: "Enable",
@@ -89,6 +97,19 @@ pub fn register(reg: &mut Registry) {
         let url = obs_url(project, &ctx.distro);
         let alias = args.opt_str("alias").map(str::to_owned).unwrap_or_else(|| project.replace(':', "_"));
         add(&ctx, &url, &alias).await
+    });
+
+    reg.action(NON_OSS, |ctx, _| async move {
+        Ok(Output::Done(match zypper::ensure_non_oss(&ctx).await? {
+            Some(what) => format!("non-oss is ready ({what})"),
+            None => "non-oss was already enabled".into(),
+        }))
+    });
+    reg.shell(NON_OSS.id, |_, d| {
+        vec![
+            "sudo zypper modifyrepo --enable openSUSE:repo-non-oss   # if it exists, disabled".into(),
+            format!("sudo zypper addrepo --refresh '{}' repo-non-oss   # if it is missing", zypper::non_oss_url(d)),
+        ]
     });
 
     reg.action(ADD_FLATHUB, |ctx, _| async move {

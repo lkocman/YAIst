@@ -1,15 +1,15 @@
 # Machine-readable licensing for every file (https://reuse.software).
 # Check with: reuse lint
 version = 1
-SPDX-PackageName = "YAIST"
-SPDX-PackageSupplier = "The YAIST contributors"
+SPDX-PackageName = "YAiST"
+SPDX-PackageSupplier = "The YAiST contributors"
 
-# Everything is YAIST's own work under Apache-2.0 unless a more
+# Everything is YAiST's own work under Apache-2.0 unless a more
 # specific entry below says otherwise.
 [[annotations]]
 path = "**"
 precedence = "aggregate"
-SPDX-FileCopyrightText = "2026 The YAIST contributors"
+SPDX-FileCopyrightText = "2026 The YAiST contributors"
 SPDX-License-Identifier = "Apache-2.0"
 
 # Adapted from the ArtCraft launcher (https://github.com/storytold/craft-launcher),
@@ -18,7 +18,15 @@ SPDX-License-Identifier = "Apache-2.0"
 [[annotations]]
 path = ["apps/yaist-gui/src/theme.rs", "apps/yaist-gui/src/widgets.rs"]
 precedence = "aggregate"
-SPDX-FileCopyrightText = ["2026 ArtCraft Team and the ArtCraft Launcher contributors", "2026 The YAIST contributors"]
+SPDX-FileCopyrightText = ["2026 ArtCraft Team and the ArtCraft Launcher contributors", "2026 The YAiST contributors"]
+SPDX-License-Identifier = "Apache-2.0"
+
+# The YAiST icon (aardvark at a laptop). Provenance to be confirmed; listed
+# under the project licence until then (see docs/LICENSING.md).
+[[annotations]]
+path = "assets/icons/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2026 The YAiST contributors"
 SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]

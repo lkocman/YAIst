@@ -648,12 +648,12 @@ impl App {
         }
     }
 
-    /// The YAIST wordmark, with the AI in Geeko green.
+    /// The YAiST wordmark, with the AI in Geeko green.
     fn wordmark(&self) -> Vec<Span<'static>> {
         yaist_ui::WORDMARK
             .iter()
             .map(|(text, accent)| {
-                Span::styled(*text, self.style(if *accent { self.t.accent } else { self.t.ink_strong }).add_modifier(Modifier::BOLD))
+                Span::styled(*text, self.style(if *accent { self.t.brand } else { self.t.ink_strong }).add_modifier(Modifier::BOLD))
             })
             .collect()
     }
@@ -785,12 +785,19 @@ impl App {
             }
         }
         lines.push(Line::from(""));
-        lines.push(Line::from(vec![Span::raw(" "), self.hud("04 / openSUSE community", t.faint)]));
-        for l in welcome::LINKS {
-            lines.push(Line::from(vec![
-                Span::styled(format!(" {:<20}", l.title), self.style(t.ink_strong)),
-                Span::styled(l.url.to_owned(), self.style(t.accent)),
-            ]));
+        lines.push(Line::from(vec![
+            Span::raw(" "),
+            self.hud("04 / join the community", t.faint),
+            self.hud("   more in the community module", t.faint),
+        ]));
+        for title in welcome::FEATURED {
+            if let Some(l) = welcome::link(title) {
+                lines.push(Line::from(vec![
+                    Span::styled(format!(" {:<14}", l.title), self.style(t.ink_strong)),
+                    Span::styled(l.url.to_owned(), self.style(t.accent)),
+                    Span::styled(format!("  {}", l.text), self.style(t.muted)),
+                ]));
+            }
         }
         f.render_widget(Paragraph::new(lines), area);
     }
@@ -851,7 +858,7 @@ impl App {
         f.render_widget(block, input_area);
         let prompt = Span::styled(" › ", self.style(if focused { t.accent } else { t.faint }).add_modifier(Modifier::BOLD));
         let line = if self.input.is_empty() {
-            Line::from(vec![prompt, Span::styled("Ask YAIST, or type /help", self.style(t.faint))])
+            Line::from(vec![prompt, Span::styled("Ask YAiST, or type /help", self.style(t.faint))])
         } else {
             Line::from(vec![prompt, Span::styled(self.input.clone(), self.style(t.ink_strong))])
         };
