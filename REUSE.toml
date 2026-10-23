@@ -22,7 +22,8 @@ SPDX-FileCopyrightText = ["2026 ArtCraft Team and the ArtCraft Launcher contribu
 SPDX-License-Identifier = "Apache-2.0"
 
 # The YAiST icon (aardvark at a laptop), generated with ChatGPT (OpenAI) by
-# Lubos Kocman; OpenAI's terms assign the output to the user. Purely
+# Lubos Kocman and traced to SVG in Inkscape; the PNG sizes are rendered from
+# the SVG. OpenAI's terms assign the output to the user. Purely
 # AI-generated images may not be protected by copyright in some
 # jurisdictions; whatever rights exist are licensed under Apache-2.0.
 [[annotations]]

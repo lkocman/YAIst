@@ -13,8 +13,8 @@ use crate::theme::{self, Tokens};
 use crate::widgets::{self, Kind};
 
 const SIDEBAR_W: f32 = 264.0;
-/// The app icon, shown next to the wordmark.
-const APP_ICON: &[u8] = include_bytes!("../../../assets/icons/hicolor/64x64/apps/org.opensuse.yaist.png");
+/// The app icon (SVG, sharp at any scale), shown next to the wordmark.
+const APP_ICON: &[u8] = include_bytes!("../../../assets/icons/hicolor/scalable/apps/org.opensuse.yaist.svg");
 const ROW_H: f32 = 40.0;
 
 /// What the user did this frame; applied once drawing is done.
@@ -180,7 +180,7 @@ impl App {
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.add_space(18.0);
-            ui.add(egui::Image::from_bytes("bytes://yaist-icon.png", APP_ICON).fit_to_exact_size(vec2(32.0, 32.0)));
+            ui.add(egui::Image::from_bytes("bytes://yaist-icon.svg", APP_ICON).fit_to_exact_size(vec2(32.0, 32.0)));
             ui.add_space(10.0);
             wordmark(ui, 21.0);
             ui.add_space(20.0);
