@@ -35,8 +35,8 @@ time of writing (x86_64 Linux target, normal dependencies only):
 
 | Binary | Crates linked | Suggested `License:` |
 |---|---|---|
-| `yaist` (TUI and CLI) | 152 | `Apache-2.0 AND MIT AND Unicode-3.0 AND Zlib` |
-| `yaist-gui` | 251 | `Apache-2.0 AND ISC AND MIT AND OFL-1.1 AND Unicode-3.0 AND Zlib` |
+| `yaist` (TUI and CLI) | 164 | `Apache-2.0 AND BSD-3-Clause AND ISC AND MIT AND Unicode-3.0 AND Zlib` |
+| `yaist-gui` | 263 | `Apache-2.0 AND BSD-3-Clause AND ISC AND MIT AND OFL-1.1 AND Unicode-3.0 AND Zlib` |
 
 - **No copyleft is forced.** Two crates offer a copyleft licence as one `OR`
   choice: `r-efi` (`MIT OR Apache-2.0 OR LGPL-2.1-or-later`) and `self_cell`
@@ -48,6 +48,8 @@ time of writing (x86_64 Linux target, normal dependencies only):
   binary then reads them from `/usr/share/yaist/fonts` (or `$YAIST_FONT_DIR`).
   Inter is packaged in openSUSE (`inter-fonts`); Archivo and Geist Mono are
   not, which is why they are bundled by default.
+- TLS (for get.opensuse.org) is rustls with the **system** CA store
+  (`/etc/ssl`), not a bundled certificate list.
 - egui's default fonts (which carry the Ubuntu Font Licence) are deliberately
   disabled.
 
@@ -63,10 +65,10 @@ the vendored tree, pass `--offline`.
 # scripts/license-report.sh (cargo tree -e normal -p yaist / -p yaist-gui):
 # no copyleft without a permissive alternative (r-efi and self_cell are
 # used under Apache-2.0); OFL-1.1 covers the fonts embedded in yaist-gui.
-License:        Apache-2.0 AND MIT AND Unicode-3.0 AND Zlib
+License:        Apache-2.0 AND BSD-3-Clause AND ISC AND MIT AND Unicode-3.0 AND Zlib
 ...
 %package gui
-License:        Apache-2.0 AND ISC AND MIT AND OFL-1.1 AND Unicode-3.0 AND Zlib
+License:        Apache-2.0 AND BSD-3-Clause AND ISC AND MIT AND OFL-1.1 AND Unicode-3.0 AND Zlib
 ```
 
 ## Compatibility with what yAIst talks to

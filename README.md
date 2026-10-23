@@ -16,7 +16,9 @@ Status: **prototype**. See [PLAN.md](PLAN.md) for the design and
 
 System (hostname, time zone, NTP), Users, Services (systemd), Firewall
 (firewalld), SELinux, Packages and Repositories (zypper, OBS community
-repositories).
+repositories), Snapshots (snapper: compare, create, roll back) and Upgrade
+(Tumbleweed/Slowroll: `zypper dup`; Leap: move to a newer release with the
+repositories switched to it, like opensuse-migration-tool).
 
 ## Running
 
@@ -45,8 +47,11 @@ yaist tools                              # the tool definitions the model sees
 
 Changes run with your privileges through polkit: systemd, firewalld and
 timedated ask for authentication themselves; package, user and SELinux changes
-use `pkexec`. In the planned design this moves into a privileged `yaistd`
-daemon.
+use `pkexec`, and snapshots and Leap upgrades go through `yaist-helper`, a
+small privileged program that re-validates its arguments. Plain pkexec asks
+for the password every time; `scripts/dev-install-helper.sh` installs the
+helper with a polkit policy that keeps the authorisation for a few minutes.
+In the planned design all of this moves into a privileged `yaistd` daemon.
 
 ## Configuration
 

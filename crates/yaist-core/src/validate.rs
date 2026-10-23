@@ -119,6 +119,41 @@ pub fn timezone(s: &str) -> R {
     Ok(())
 }
 
+/// A Leap release such as `16.1`.
+pub fn release_version(s: &str) -> R {
+    match s.split_once('.') {
+        Some((a, b)) if !a.is_empty() && !b.is_empty() && a.len() <= 2 && b.len() <= 2 && (a.to_owned() + b).chars().all(|c| c.is_ascii_digit()) => {
+            Ok(())
+        }
+        _ => Err("expected a release like 16.1".into()),
+    }
+}
+
+/// `16.1` > `16.0` > `15.6`, compared numerically.
+pub fn version_newer(candidate: &str, current: &str) -> bool {
+    let parse = |v: &str| -> (u32, u32) {
+        let (a, b) = v.split_once('.').unwrap_or((v, "0"));
+        (a.parse().unwrap_or(0), b.parse().unwrap_or(0))
+    };
+    parse(candidate) > parse(current)
+}
+
+/// A snapper snapshot number (0 is the running system and can't be used).
+pub fn snapshot_number(s: &str) -> R {
+    match s.parse::<u32>() {
+        Ok(n) if n > 0 => Ok(()),
+        _ => Err("expected a snapshot number (1 or higher)".into()),
+    }
+}
+
+/// A one-line description, e.g. for a snapshot.
+pub fn description(s: &str) -> R {
+    if s.is_empty() || s.len() > 200 || s.chars().any(char::is_control) || s.starts_with('-') {
+        return Err("one line, up to 200 characters".into());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,5 +175,19 @@ mod tests {
         assert!(firewall_rule("ssh").is_ok());
         assert!(port("60000-61000").is_ok());
         assert!(obs_project("devel:languages:rust").is_ok());
+        assert!(release_version("16.1").is_ok());
+        assert!(snapshot_number("42").is_ok());
+    }
+
+    #[test]
+    fn release_versions() {
+        assert!(release_version("16").is_err());
+        assert!(release_version("16.1; rm").is_err());
+        assert!(release_version("../16.0").is_err());
+        assert!(snapshot_number("0").is_err());
+        assert!(snapshot_number("-1").is_err());
+        assert!(version_newer("16.0", "15.6"));
+        assert!(version_newer("16.10", "16.9"));
+        assert!(!version_newer("16.0", "16.0"));
     }
 }

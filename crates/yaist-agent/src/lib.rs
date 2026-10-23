@@ -137,6 +137,8 @@ Examples:
 User: let my nephew tom log in, but without sudo -> call users__create with username=tom, admin=false
 User: open port 8080 for my dev server -> call firewall__open_port with port=8080
 User: is nginx running? -> call services__status with unit=nginx, then answer
+User: upgrade to the next Leap -> call upgrade__targets, then upgrade__distribution with the newest version
+User: take a snapshot before I start -> call snapshots__create with a short description
 User: why did my service fail? -> call services__list with state=failed, then services__status for the failed one, then explain
 User: allow the web server to make network connections -> call selinux__set_boolean with boolean=httpd_can_network_connect, value=true"
     )
