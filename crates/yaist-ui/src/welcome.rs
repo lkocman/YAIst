@@ -20,6 +20,13 @@ pub fn distribution_logo(file: &str) -> Option<String> {
     path.is_file().then(|| format!("file://{}", path.display()))
 }
 
+/// Artwork for the welcome screen instead of the drawn chameleon:
+/// `$YAIST_WELCOME_ART` (an SVG or PNG), as a `file://` URI.
+pub fn welcome_art() -> Option<String> {
+    let path = std::path::PathBuf::from(std::env::var_os("YAIST_WELCOME_ART")?);
+    path.is_file().then(|| format!("file://{}", path.display()))
+}
+
 /// How this system takes changes, shown under the welcome title:
 /// (label, explanation).
 pub fn mode(d: &Distro) -> (&'static str, &'static str) {

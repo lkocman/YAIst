@@ -449,40 +449,55 @@ impl App {
         let t = Tokens::get(ui.ctx());
         let d = &v.distro_info;
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let (rect, _) = ui.allocate_exact_size(vec2(270.0, 190.0), egui::Sense::hover());
-                crate::art::chameleon(ui.painter(), rect, &t);
-                ui.add_space(20.0);
-                ui.vertical(|ui| {
-                    ui.add_space(30.0);
-                    if let Some(uri) = welcome::distribution_logo(welcome::LOGO_SQUARE) {
-                        ui.add(egui::Image::new(uri).fit_to_exact_size(vec2(56.0, 56.0))).on_hover_text(&v.distro);
-                        ui.add_space(10.0);
+            // Artwork and text centred against each other, so neither leaves a gap.
+            // A fixed-height row: centring inside the scroll area would use its
+            // whole height.
+            let art = welcome::welcome_art();
+            let hero_h = if art.is_some() { 170.0 } else { 210.0 };
+            ui.allocate_ui_with_layout(vec2(ui.available_width(), hero_h), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                match &art {
+                    Some(uri) => {
+                        ui.add(egui::Image::new(uri.clone()).max_size(vec2(240.0, 150.0)));
                     }
+                    None => {
+                        let (rect, _) = ui.allocate_exact_size(vec2(240.0, 170.0), egui::Sense::hover());
+                        crate::art::chameleon(ui.painter(), rect, &t);
+                    }
+                }
+                ui.add_space(28.0);
+                ui.vertical(|ui| {
                     widgets::hud(ui, "Welcome to", t.muted);
                     ui.add_space(4.0);
+                    // The openSUSE artwork carries the brand, so the title shows
+                    // the release; with the drawn chameleon it shows both.
                     let name = if d.pretty.is_empty() { "openSUSE".to_owned() } else { d.pretty.clone() };
-                    let (brand, rest) = name.split_once(' ').map(|(a, b)| (a.to_owned(), format!(" {b}"))).unwrap_or((name.clone(), String::new()));
-                    let mut job = egui::text::LayoutJob::default();
-                    let font = FontId::new(38.0, theme::display());
-                    job.append(&brand, 0.0, egui::TextFormat { font_id: font.clone(), color: t.accent, ..Default::default() });
-                    job.append(&rest, 0.0, egui::TextFormat { font_id: font, color: t.ink_strong, ..Default::default() });
-                    ui.label(job);
-                    ui.add_space(6.0);
+                    let (brand, release) = match name.split_once(' ') {
+                        Some((b, r)) => (b.to_owned(), r.to_owned()),
+                        None => (String::new(), name.clone()),
+                    };
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 12.0;
+                        if let Some(uri) = welcome::distribution_logo(welcome::LOGO_SQUARE) {
+                            ui.add(egui::Image::new(uri).fit_to_exact_size(vec2(40.0, 40.0))).on_hover_text(&v.distro);
+                        }
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            let font = FontId::new(38.0, theme::display());
+                            if art.is_none() && !brand.is_empty() {
+                                ui.label(RichText::new(&brand).font(font.clone()).color(t.accent));
+                            }
+                            ui.label(RichText::new(&release).font(font).color(t.ink_strong));
+                        });
+                    });
+                    ui.add_space(8.0);
                     let (mode, explanation) = welcome::mode(d);
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing.x = 10.0;
                         widgets::tag(ui, mode, t.invert_bg, t.invert_fg);
                         ui.label(RichText::new(explanation).size(13.0).color(t.ink));
                     });
-                    ui.add_space(8.0);
-                    ui.label(
-                        RichText::new(
-                            "yAIst helps you set up and look after this computer. Ask in plain language on the right, or start with one of these.",
-                        )
-                        .size(14.0)
-                        .color(t.muted),
-                    );
+                    ui.add_space(6.0);
+                    ui.label(RichText::new("Ask yAIst in plain language on the right, or start with one of these.").size(13.0).color(t.muted));
                 });
             });
             ui.add_space(18.0);
