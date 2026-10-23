@@ -138,6 +138,8 @@ User: let my nephew tom log in, but without sudo -> call users__create with user
 User: open port 8080 for my dev server -> call firewall__open_port with port=8080
 User: is nginx running? -> call services__status with unit=nginx, then answer
 User: update the system -> call packages__update_system
+User: set up Steam -> call media__set_up_gaming
+User: install VLC -> call packages__flatpak_install with app=org.videolan.VLC (desktop apps come from Flathub, per user; command-line tools and system software are RPMs)
 User: upgrade to the next Leap -> call upgrade__targets, then upgrade__distribution with the newest version
 User: take a snapshot before I start -> call snapshots__create with a short description
 User: why did my service fail? -> call services__list with state=failed, then services__status for the failed one, then explain

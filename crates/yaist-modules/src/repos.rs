@@ -1,17 +1,20 @@
-//! Repositories, including community repositories from the Open Build Service.
+//! Repositories: RPM (zypper, including community repositories from the Open
+//! Build Service) and Flatpak remotes (per user, like Flathub).
 
 use anyhow::Result;
 use yaist_core::shell_quote as sq;
 use yaist_core::{validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk, Table};
 
-use crate::zypper;
+use crate::{flatpak, zypper};
 
 const ALIAS_PARAM: Param = Param::text("alias", "Repository alias, as listed").check(validate::name);
+const KIND_PARAM: Param =
+    Param::choice("kind", &["rpm", "flatpak-user", "flatpak-system"], "Repository type, as listed (rpm or flatpak)").default("rpm");
 
 const LIST: ActionSpec = ActionSpec {
     id: "repos.list",
     title: "List repositories",
-    description: "List configured package repositories with their URL, priority and whether they are enabled.",
+    description: "List configured repositories: RPM repositories (zypper) and Flatpak remotes, with their URL and whether they are enabled.",
     risk: Risk::Read,
     params: &[],
 };
@@ -38,23 +41,41 @@ const ADD_OBS: ActionSpec = ActionSpec {
     ],
 };
 
-const ENABLE: ActionSpec =
-    ActionSpec { id: "repos.enable", title: "Enable", description: "Enable a repository.", risk: Risk::Change, params: &[ALIAS_PARAM] };
+const ADD_FLATHUB: ActionSpec = ActionSpec {
+    id: "repos.add_flathub",
+    title: "Add Flathub",
+    description: "Add Flathub, the main source of Flatpak apps, for the current user (flatpak --user, no root needed).",
+    risk: Risk::Change,
+    params: &[],
+};
+
+const ENABLE: ActionSpec = ActionSpec {
+    id: "repos.enable",
+    title: "Enable",
+    description: "Enable a repository (RPM or Flatpak).",
+    risk: Risk::Change,
+    params: &[ALIAS_PARAM, KIND_PARAM],
+};
 const DISABLE: ActionSpec = ActionSpec {
     id: "repos.disable",
     title: "Disable",
-    description: "Disable a repository without removing it.",
+    description: "Disable a repository (RPM or Flatpak) without removing it.",
     risk: Risk::Change,
-    params: &[ALIAS_PARAM],
+    params: &[ALIAS_PARAM, KIND_PARAM],
 };
-const REMOVE: ActionSpec =
-    ActionSpec { id: "repos.remove", title: "Remove", description: "Remove a repository.", risk: Risk::Dangerous, params: &[ALIAS_PARAM] };
+const REMOVE: ActionSpec = ActionSpec {
+    id: "repos.remove",
+    title: "Remove",
+    description: "Remove a repository (RPM or Flatpak).",
+    risk: Risk::Dangerous,
+    params: &[ALIAS_PARAM, KIND_PARAM],
+};
 
 pub fn register(reg: &mut Registry) {
     reg.module(ModuleSpec {
         id: "repos",
         title: "Repositories",
-        tagline: "Official and community sources",
+        tagline: "RPM and Flatpak repositories",
         overview: LIST.id,
         row_actions: &[ENABLE.id, DISABLE.id, REMOVE.id],
     });
@@ -70,18 +91,37 @@ pub fn register(reg: &mut Registry) {
         add(&ctx, &url, &alias).await
     });
 
-    reg.action(ENABLE, |ctx, args| async move {
-        zypper::change(&ctx, &["modifyrepo", "--enable", "--", args.str("alias")]).await?;
-        Ok(Output::Done(format!("Enabled {}", args.str("alias"))))
+    reg.action(ADD_FLATHUB, |ctx, _| async move {
+        flatpak::ensure_flathub(&ctx).await?;
+        Ok(Output::Done("Flathub added for your user".into()))
     });
-    reg.action(DISABLE, |ctx, args| async move {
-        zypper::change(&ctx, &["modifyrepo", "--disable", "--", args.str("alias")]).await?;
-        Ok(Output::Done(format!("Disabled {}", args.str("alias"))))
-    });
-    reg.action(REMOVE, |ctx, args| async move {
-        zypper::change(&ctx, &["removerepo", "--", args.str("alias")]).await?;
-        Ok(Output::Done(format!("Removed {}", args.str("alias"))))
-    });
+
+    for (spec, verb) in [(ENABLE, "Enabled"), (DISABLE, "Disabled"), (REMOVE, "Removed")] {
+        reg.action(spec, move |ctx, args| async move {
+            let alias = args.str("alias");
+            match args.str("kind") {
+                "rpm" => {
+                    let op: &[&str] = match spec.verb() {
+                        "enable" => &["modifyrepo", "--enable"],
+                        "disable" => &["modifyrepo", "--disable"],
+                        _ => &["removerepo"],
+                    };
+                    let mut zargs = op.to_vec();
+                    zargs.extend(["--", alias]);
+                    zypper::change(&ctx, &zargs).await?;
+                }
+                kind => {
+                    let user = kind == "flatpak-user";
+                    match spec.verb() {
+                        "enable" => flatpak::remote_cmd(&ctx, user, &["remote-modify", "--enable", alias]).await?,
+                        "disable" => flatpak::remote_cmd(&ctx, user, &["remote-modify", "--disable", alias]).await?,
+                        _ => flatpak::remote_cmd(&ctx, user, &["remote-delete", alias]).await?,
+                    }
+                }
+            }
+            Ok(Output::Done(format!("{verb} {alias}")))
+        });
+    }
 
     reg.shell(LIST.id, |_, _| vec!["zypper repos --uri".into()]);
     reg.shell(ADD.id, |a, _| add_cmds(a.str("url"), a.str("alias")));
@@ -90,9 +130,19 @@ pub fn register(reg: &mut Registry) {
         let alias = a.opt_str("alias").map(str::to_owned).unwrap_or_else(|| project.replace(':', "_"));
         add_cmds(&obs_url(project, d), &alias)
     });
-    reg.shell(ENABLE.id, |a, _| vec![format!("sudo zypper modifyrepo --enable {}", sq(a.str("alias")))]);
-    reg.shell(DISABLE.id, |a, _| vec![format!("sudo zypper modifyrepo --disable {}", sq(a.str("alias")))]);
-    reg.shell(REMOVE.id, |a, _| vec![format!("sudo zypper removerepo {}", sq(a.str("alias")))]);
+    reg.shell(ADD_FLATHUB.id, |_, _| vec![format!("flatpak remote-add --user --if-not-exists {} {}", flatpak::FLATHUB, flatpak::FLATHUB_URL)]);
+    reg.shell(ENABLE.id, |a, _| repo_cmd(a, "sudo zypper modifyrepo --enable", "flatpak remote-modify --enable"));
+    reg.shell(DISABLE.id, |a, _| repo_cmd(a, "sudo zypper modifyrepo --disable", "flatpak remote-modify --disable"));
+    reg.shell(REMOVE.id, |a, _| repo_cmd(a, "sudo zypper removerepo", "flatpak remote-delete"));
+}
+
+fn repo_cmd(a: &yaist_core::Args, rpm: &str, flatpak: &str) -> Vec<String> {
+    let alias = sq(a.str("alias"));
+    match a.str("kind") {
+        "flatpak-user" => vec![format!("{flatpak} --user {alias}")],
+        "flatpak-system" => vec![format!("{flatpak} --system {alias}")],
+        _ => vec![format!("{rpm} {alias}")],
+    }
 }
 
 /// The OBS repository URL for `project` on this distribution.
@@ -122,12 +172,17 @@ async fn add(ctx: &Context, url: &str, alias: &str) -> Result<Output> {
 async fn list(ctx: &Context) -> Result<Output> {
     let xml = zypper::query(ctx, &["repos"]).await?;
     let doc = zypper::parse(&xml)?;
-    let mut t = Table::new(&[("alias", "Alias"), ("name", "Name"), ("enabled", "Enabled"), ("priority", "Priority"), ("url", "URL")]);
+    let mut t =
+        Table::new(&[("alias", "Alias"), ("name", "Name"), ("kind", "Type"), ("enabled", "Enabled"), ("priority", "Priority"), ("url", "URL")]);
     for r in doc.descendants().filter(|n| n.has_tag_name("repo")) {
         let url = r.children().find(|c| c.has_tag_name("url")).and_then(|u| u.text()).unwrap_or("");
         let attr = |k| r.attribute(k).unwrap_or("").to_owned();
         let enabled = if r.attribute("enabled") == Some("1") { "yes" } else { "no" };
-        t.push(vec![attr("alias"), attr("name"), enabled.into(), attr("priority"), url.to_owned()]);
+        t.push(vec![attr("alias"), attr("name"), "rpm".into(), enabled.into(), attr("priority"), url.to_owned()]);
+    }
+    for remote in flatpak::remotes(ctx).await {
+        let kind = if remote.user { "flatpak-user" } else { "flatpak-system" };
+        t.push(vec![remote.name, remote.title, kind.into(), if remote.enabled { "yes" } else { "no" }.into(), "-".into(), remote.url]);
     }
     Ok(Output::Table(t))
 }

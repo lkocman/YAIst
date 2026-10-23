@@ -119,6 +119,16 @@ pub fn timezone(s: &str) -> R {
     Ok(())
 }
 
+/// A Flatpak application ID, reverse DNS: `com.valvesoftware.Steam`.
+pub fn flatpak_app(s: &str) -> R {
+    let parts: Vec<&str> = s.split('.').collect();
+    let part_ok = |p: &&str| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') && !p.starts_with('-');
+    if parts.len() < 3 || s.len() > 255 || !parts.iter().all(part_ok) {
+        return Err("expected an application ID like org.videolan.VLC".into());
+    }
+    Ok(())
+}
+
 /// A Leap release such as `16.1`.
 pub fn release_version(s: &str) -> R {
     match s.split_once('.') {
@@ -176,6 +186,9 @@ mod tests {
         assert!(port("60000-61000").is_ok());
         assert!(obs_project("devel:languages:rust").is_ok());
         assert!(release_version("16.1").is_ok());
+        assert!(flatpak_app("com.valvesoftware.Steam").is_ok());
+        assert!(flatpak_app("--user").is_err());
+        assert!(flatpak_app("org.foo").is_err());
         assert!(snapshot_number("42").is_ok());
     }
 

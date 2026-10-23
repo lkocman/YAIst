@@ -6,7 +6,7 @@ use anyhow::Result;
 use yaist_core::shell_quote as sq;
 use yaist_core::{validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk, Table};
 
-use crate::zypper;
+use crate::{flatpak, zypper};
 
 const PACKAGES_PARAM: Param = Param::text("packages", "Package names, space separated").check(validate::packages);
 
@@ -74,6 +74,40 @@ const REFRESH: ActionSpec = ActionSpec {
     params: &[],
 };
 
+const APP_PARAM: Param = Param::text("app", "Flatpak application ID, e.g. org.videolan.VLC").check(validate::flatpak_app);
+
+const FLATPAK_SEARCH: ActionSpec = ActionSpec {
+    id: "packages.flatpak_search",
+    title: "Search Flatpak apps",
+    description: "Search Flatpak apps (e.g. on Flathub) by name. Prefer Flatpak for desktop apps on Leap and on immutable systems.",
+    risk: Risk::Read,
+    params: &[Param::text("query", "App name, e.g. vlc or steam").check(validate::search_term)],
+};
+
+const FLATPAK_LIST: ActionSpec = ActionSpec {
+    id: "packages.flatpak_list",
+    title: "Flatpak apps",
+    description: "List Flatpak apps installed for the current user.",
+    risk: Risk::Read,
+    params: &[],
+};
+
+const FLATPAK_INSTALL: ActionSpec = ActionSpec {
+    id: "packages.flatpak_install",
+    title: "Install Flatpak app",
+    description: "Install a Flatpak app for the current user (flatpak --user, no root). Sets up Flathub for the user if needed.",
+    risk: Risk::Change,
+    params: &[APP_PARAM, Param::text("remote", "Flatpak remote").default("flathub").check(validate::name)],
+};
+
+const FLATPAK_REMOVE: ActionSpec = ActionSpec {
+    id: "packages.flatpak_remove",
+    title: "Remove Flatpak app",
+    description: "Remove a Flatpak app installed for the current user.",
+    risk: Risk::Change,
+    params: &[APP_PARAM],
+};
+
 pub fn register(reg: &mut Registry) {
     reg.module(ModuleSpec {
         id: "packages",
@@ -102,6 +136,50 @@ pub fn register(reg: &mut Registry) {
         let out = pkg_op(&ctx, "remove", &pkgs).await?;
         Ok(Output::Done(format!("Removed {}. {out}", pkgs.join(", "))))
     });
+
+    reg.action(FLATPAK_SEARCH, |ctx, args| async move {
+        if !flatpak::installed() {
+            return Ok(Output::Text("Flatpak is not installed; installing an app sets it up.".into()));
+        }
+        let out = ctx.run(&[flatpak::BIN, "search", "--columns=application,name,description,remotes", args.str("query")]).await?;
+        let mut t = Table::new(&[("app", "App ID"), ("name", "Name"), ("description", "Description"), ("remote", "Remote")]);
+        for line in out.lines().filter(|l| l.contains('\t')) {
+            let f: Vec<String> = line.split('\t').map(str::to_owned).collect();
+            t.push((0..4).map(|i| f.get(i).cloned().unwrap_or_default()).collect());
+        }
+        t.rows.truncate(100);
+        Ok(Output::Table(t))
+    });
+    reg.action(FLATPAK_LIST, |ctx, _| async move {
+        let mut t = Table::new(&[("app", "App ID"), ("name", "Name"), ("version", "Version"), ("remote", "Remote")]);
+        if flatpak::installed() {
+            let out = ctx.run(&[flatpak::BIN, "list", "--user", "--app", "--columns=application,name,version,origin"]).await?;
+            for line in out.lines().filter(|l| l.contains('\t')) {
+                let f: Vec<String> = line.split('\t').map(str::to_owned).collect();
+                t.push((0..4).map(|i| f.get(i).cloned().unwrap_or_default()).collect());
+            }
+        }
+        Ok(Output::Table(t))
+    });
+    reg.action(FLATPAK_INSTALL, |ctx, args| async move {
+        flatpak::install(&ctx, args.str("remote"), args.str("app")).await?;
+        Ok(Output::Done(format!("Installed {} for your user", args.str("app"))))
+    });
+    reg.action(FLATPAK_REMOVE, |ctx, args| async move {
+        flatpak::remove(&ctx, args.str("app")).await?;
+        Ok(Output::Done(format!("Removed {}", args.str("app"))))
+    });
+    reg.shell(FLATPAK_SEARCH.id, |a, _| vec![format!("flatpak search {}", sq(a.str("query")))]);
+    reg.shell(FLATPAK_LIST.id, |_, _| vec!["flatpak list --user --app".into()]);
+    reg.shell(FLATPAK_INSTALL.id, |a, _| {
+        let mut cmds = Vec::new();
+        if a.str("remote") == flatpak::FLATHUB {
+            cmds.push(format!("flatpak remote-add --user --if-not-exists {} {}", flatpak::FLATHUB, flatpak::FLATHUB_URL));
+        }
+        cmds.push(format!("flatpak install --user {} {}", sq(a.str("remote")), sq(a.str("app"))));
+        cmds
+    });
+    reg.shell(FLATPAK_REMOVE.id, |a, _| vec![format!("flatpak uninstall --user {}", sq(a.str("app")))]);
 
     reg.action(UPDATE_SYSTEM, |ctx, _| async move {
         let d = &ctx.distro;
@@ -142,6 +220,11 @@ fn pkg_cmd(op: &str, packages: &str, d: &yaist_core::Distro) -> Vec<String> {
     } else {
         vec![format!("sudo zypper {op} {}", pkgs.join(" "))]
     }
+}
+
+/// Installs RPM packages the way this system wants it (transactional or not).
+pub(crate) async fn install_rpms(ctx: &Context, pkgs: &[&str]) -> Result<String> {
+    pkg_op(ctx, "install", pkgs).await
 }
 
 async fn pkg_op(ctx: &Context, op: &str, pkgs: &[&str]) -> Result<String> {

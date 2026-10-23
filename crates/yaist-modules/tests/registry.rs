@@ -13,7 +13,7 @@ fn action_ids_are_unique_and_belong_to_a_module() {
     for spec in reg.specs() {
         assert!(seen.insert(spec.id), "duplicate action {}", spec.id);
         assert!(modules.contains(spec.module()), "{} has no module", spec.id);
-        assert!(spec.verb().chars().all(|c| c.is_ascii_lowercase() || c == '_'), "{}: verb must be snake_case", spec.id);
+        assert!(spec.verb().chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'), "{}: verb must be snake_case", spec.id);
         // LLM tool names: [a-zA-Z0-9_-], at most 64 characters ('.' becomes '__').
         assert!(spec.id.len() < 64, "{} is too long for a tool name", spec.id);
         assert!(!spec.description.is_empty() && !spec.title.is_empty(), "{} needs a title and description", spec.id);
@@ -104,6 +104,7 @@ fn every_action_teaches_its_terminal_command() {
                     "url" => "https://example.org/repo",
                     "timezone" => "UTC",
                     "project" => "games",
+                    "app" => "org.videolan.VLC",
                     _ => "example",
                 },
             };
@@ -114,7 +115,9 @@ fn every_action_teaches_its_terminal_command() {
             let cmds = reg.shell_for(spec.id, &args, d);
             assert!(!cmds.is_empty(), "{} has no terminal equivalent", spec.id);
             if spec.risk != Risk::Read {
-                assert!(cmds.iter().any(|c| c.starts_with("sudo ")), "{}: a change should show the sudo command", spec.id);
+                // Root changes show sudo; per-user Flatpak changes need none.
+                let shows = cmds.iter().any(|c| c.starts_with("sudo ") || c.starts_with("flatpak ") || c.starts_with("# "));
+                assert!(shows, "{}: a change should show the sudo (or flatpak --user) command", spec.id);
             }
         }
     }

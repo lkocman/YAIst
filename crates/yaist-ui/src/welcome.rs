@@ -143,7 +143,7 @@ pub fn start_items(d: &Distro) -> Vec<StartItem> {
             start: Start::Action("packages.search"),
         },
         StartItem { title: "Add a user", text: "Create an account for someone else on this computer.", start: Start::Action("users.create") },
-        StartItem { title: "Check the firewall", text: "See which services and ports are open to the network.", start: Start::Module("firewall") },
+        StartItem { title: "Gaming & media", text: "Steam, graphics drivers and codecs, set up for this system.", start: Start::Module("media") },
     ];
     items.push(if d.id == "opensuse-leap" {
         StartItem { title: "New Leap release?", text: "See whether a newer openSUSE Leap is available.", start: Start::Module("upgrade") }
@@ -155,7 +155,7 @@ pub fn start_items(d: &Distro) -> Vec<StartItem> {
 
 /// Requests to try in the conversation.
 pub fn suggestions(d: &Distro) -> Vec<&'static str> {
-    let mut s = vec!["Is my system up to date?", "Which services failed?", "Install htop", "Open port 8080 for my dev server"];
+    let mut s = vec!["Is my system up to date?", "Set up Steam", "Which services failed?", "Install VLC", "Open port 8080 for my dev server"];
     s.push(if d.id == "opensuse-leap" { "Upgrade to the next Leap" } else { "Take a snapshot before I update" });
     s.push("zypper in fish");
     s

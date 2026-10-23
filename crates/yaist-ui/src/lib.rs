@@ -93,8 +93,10 @@ pub fn tone_of(value: &str) -> Tone {
     match value {
         "active" | "running" | "enabled" | "yes" | "on" | "installed" | "enforcing" => Tone::Good,
         "failed" | "masked" => Tone::Bad,
-        "activating" | "deactivating" | "reloading" | "permissive" => Tone::Warn,
-        "inactive" | "dead" | "disabled" | "no" | "off" | "static" | "-" | "available" | "exited" | "indirect" => Tone::Faint,
+        "activating" | "deactivating" | "reloading" | "permissive" | "missing" => Tone::Warn,
+        "inactive" | "dead" | "disabled" | "no" | "off" | "static" | "-" | "available" | "exited" | "indirect" | "optional" | "not needed" => {
+            Tone::Faint
+        }
         _ => Tone::Plain,
     }
 }

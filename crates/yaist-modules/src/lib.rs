@@ -2,7 +2,9 @@
 //! actions; clients never call these directly, only through the registry.
 
 mod firewall;
+mod flatpak;
 mod helper;
+mod media;
 mod packages;
 mod repos;
 mod selinux;
@@ -28,6 +30,7 @@ pub fn registry() -> Registry {
     selinux::register(&mut reg);
     packages::register(&mut reg);
     repos::register(&mut reg);
+    media::register(&mut reg);
     snapshots::register(&mut reg);
     upgrade::register(&mut reg);
     reg

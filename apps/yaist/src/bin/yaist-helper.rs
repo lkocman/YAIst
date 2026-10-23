@@ -11,6 +11,8 @@
 //!   yaist-helper snapper-delete <number>
 //!   yaist-helper snapper-rollback <number>
 //!   yaist-helper migrate-leap leap|leap-micro <version> [repo-alias-to-disable…]
+//!   yaist-helper nvidia-setup leap|tumbleweed
+//!   yaist-helper codecs-packman
 
 use std::path::Path;
 use std::process::{Command, ExitCode};
@@ -57,6 +59,8 @@ fn run(args: &[String]) -> R {
             }
         }
         Some("migrate-leap") => migrate_leap(arg(1)?, arg(2)?, &args[3..]),
+        Some("nvidia-setup") => nvidia_setup(arg(1)?),
+        Some("codecs-packman") => codecs_packman(),
         _ => Err("usage: yaist-helper snapper-list|snapper-create|snapper-status|snapper-delete|snapper-rollback|migrate-leap …".into()),
     }
 }
@@ -111,6 +115,43 @@ fn x86_64_v2() -> bool {
     let cpuinfo = std::fs::read_to_string("/proc/cpuinfo").unwrap_or_default();
     let flags: Vec<&str> = cpuinfo.lines().find(|l| l.starts_with("flags")).map(|l| l.split_whitespace().collect()).unwrap_or_default();
     ["cx16", "sse4_1", "sse4_2", "popcnt"].iter().all(|f| flags.contains(f))
+}
+
+/// zypper, or zypper inside the next snapshot on transactional systems.
+fn zypper_step(tx: bool, args: &[&str]) -> R {
+    if tx {
+        let mut full = vec!["--non-interactive", "--continue", "run", "/usr/bin/zypper", "--non-interactive"];
+        full.extend_from_slice(args);
+        exec("/usr/sbin/transactional-update", &full)
+    } else {
+        zypper(args)
+    }
+}
+
+/// NVIDIA drivers the openSUSE way: the NVIDIA repository definitions, then
+/// install-new-recommends, which picks the driver matching the detected card.
+fn nvidia_setup(flavour: &str) -> R {
+    let repos = match flavour {
+        "leap" => "openSUSE-repos-Leap-NVIDIA",
+        "tumbleweed" => "openSUSE-repos-Tumbleweed-NVIDIA",
+        _ => return Err(format!("unknown flavour {flavour}")),
+    };
+    let tx = transactional();
+    zypper_step(tx, &["install", repos])?;
+    zypper_step(tx, &["refresh-services"])?;
+    zypper_step(tx, &["install-new-recommends"])?;
+    println!("==> NVIDIA drivers installed; reboot to load them");
+    Ok(())
+}
+
+/// Full multimedia codecs from Packman, via opi (adds Packman and switches the
+/// multimedia packages to its builds). Third-party; not for immutable systems.
+fn codecs_packman() -> R {
+    if transactional() {
+        return Err("Packman codecs are not supported on immutable systems; use Flatpak apps, which bring their own codecs".into());
+    }
+    zypper(&["install", "opi"])?;
+    exec("/usr/bin/opi", &["-n", "codecs"])
 }
 
 /// Is this a transactional (immutable) system? Immutable Leap says so in
