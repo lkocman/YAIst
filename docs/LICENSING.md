@@ -23,7 +23,7 @@ what ends up in the binaries, and what is only downloaded at runtime.
 | everything not listed below | Apache-2.0 | YAiST's own work |
 | `apps/yaist-gui/src/theme.rs`, `widgets.rs` | Apache-2.0 | adapted from the ArtCraft launcher (MIT OR Apache-2.0, used under Apache-2.0); both copyright holders in `REUSE.toml` |
 | `assets/fonts/*.ttf` | OFL-1.1 | Inter, Archivo, Geist Mono; texts in `assets/fonts/OFL-*.txt` |
-| `assets/icons/` | Apache-2.0 (to confirm) | the YAiST icon; its provenance still needs confirming before a release |
+| `assets/icons/` | Apache-2.0 | the YAiST icon, generated with ChatGPT by Lubos Kocman (OpenAI's terms assign the output to the user; purely AI-generated images may not be copyrightable, whatever rights exist are under Apache-2.0) |
 
 No ArtCraft trademarks (name, logo, icons) are used. The look borrows only the
 layout and widget style, in the openSUSE colour palette.
