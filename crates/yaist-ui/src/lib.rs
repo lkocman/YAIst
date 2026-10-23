@@ -91,12 +91,11 @@ pub enum Tone {
 
 pub fn tone_of(value: &str) -> Tone {
     match value {
-        "active" | "running" | "enabled" | "yes" | "on" | "installed" | "enforcing" | "idle" | "printing" => Tone::Good,
+        "active" | "running" | "enabled" | "yes" | "on" | "installed" | "enforcing" | "idle" | "printing" | "ready" => Tone::Good,
         "failed" | "masked" => Tone::Bad,
-        "activating" | "deactivating" | "reloading" | "permissive" | "missing" => Tone::Warn,
-        "inactive" | "dead" | "disabled" | "no" | "off" | "static" | "-" | "available" | "exited" | "indirect" | "optional" | "not needed" => {
-            Tone::Faint
-        }
+        "activating" | "deactivating" | "reloading" | "permissive" | "missing" | "rc" | "beta" | "alpha" => Tone::Warn,
+        "inactive" | "dead" | "disabled" | "no" | "off" | "static" | "-" | "available" | "exited" | "indirect" | "optional" | "not needed"
+        | "not available" => Tone::Faint,
         _ => Tone::Plain,
     }
 }

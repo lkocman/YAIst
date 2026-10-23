@@ -1,40 +1,86 @@
-//! Distribution upgrades. Tumbleweed and Slowroll roll: an upgrade is a full
-//! `zypper dup`. Leap moves to a newer release the way opensuse-migration-tool
-//! does (see yaist-helper's migrate-leap).
+//! Upgrades and migrations, the matrix of opensuse-migration-tool:
+//! - Leap: a newer Leap, Tumbleweed (rolling), Slowroll (batched rolling) or
+//!   SUSE Linux Enterprise (official support, from Leap 15.6)
+//! - Tumbleweed: a full upgrade, or Slowroll; Slowroll: a full upgrade, or
+//!   Tumbleweed; immutable rolling systems: a full upgrade
+//!
+//! Before any move to another release, every repository that might not work
+//! there is disabled (see `repo_fate`); one repository that can't be
+//! refreshed makes `zypper dup` fail.
 
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Result};
 use serde_json::Value;
 use yaist_core::shell_quote as sq;
-use yaist_core::{validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk, Table};
+use yaist_core::{validate, ActionSpec, Context, Distro, ModuleSpec, Output, Param, Registry, Risk, Table};
 
 use crate::{helper, zypper};
 
 const RELEASES_API: &str = "https://get.opensuse.org/api/v0/distributions.json";
+/// The "release" used for repository checks when the target rolls.
+const ROLLING: &str = "rolling";
+const SUSE_SERVER: &str = "https://www.suse.com/products/server/";
+
+fn target_ok(s: &str) -> std::result::Result<(), String> {
+    match s.strip_prefix("leap:") {
+        Some(v) => validate::release_version(v),
+        None if ["dup", "tumbleweed", "slowroll", "sle"].contains(&s) => Ok(()),
+        None => Err("expected leap:<version>, tumbleweed, slowroll, sle or dup (see upgrade.targets)".into()),
+    }
+}
+
+fn email_ok(s: &str) -> std::result::Result<(), String> {
+    let ok = s.split_once('@').is_some_and(|(u, d)| !u.is_empty() && d.contains('.'))
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || "@._%+-".contains(c))
+        && !s.starts_with('-');
+    if ok {
+        Ok(())
+    } else {
+        Err("expected an email address".into())
+    }
+}
+
+fn regcode_ok(s: &str) -> std::result::Result<(), String> {
+    if (4..=64).contains(&s.len()) && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        Ok(())
+    } else {
+        Err("expected a SUSE registration code".into())
+    }
+}
+
+const KEEP: Param = Param::text(
+    "keep_enabled",
+    "Repository aliases to keep enabled anyway, space separated. Only release-independent ones: a kept repository that can't be refreshed for the target makes zypper dup fail",
+)
+.default("google-chrome")
+.check(validate::names);
 
 const TARGETS: ActionSpec = ActionSpec {
     id: "upgrade.targets",
     title: "Upgrade options",
-    description: "Show what this system can upgrade to: newer Leap releases, or a full distribution upgrade on Tumbleweed/Slowroll, and which repositories an upgrade would disable.",
+    description: "Show what this system can upgrade or migrate to (newer Leap, Tumbleweed, Slowroll, SUSE Linux Enterprise, or a full upgrade on rolling releases), what each means, and which repositories it would disable.",
     risk: Risk::Read,
     params: &[],
 };
 
-const DISTRIBUTION: ActionSpec = ActionSpec {
-    id: "upgrade.distribution",
+const MIGRATE: ActionSpec = ActionSpec {
+    id: "upgrade.migrate",
     title: "Upgrade",
-    description: "Upgrade the distribution. Tumbleweed/Slowroll: full zypper dup (no version needed). Leap and Leap Micro (also immutable): move to the newer release given as version, switching the openSUSE repositories to it first and disabling every other repository (OBS, Packman, third-party: they often have no build for the new release yet, and one repository that can't be refreshed makes zypper dup fail). Takes long; reboot afterwards.",
+    description: "Upgrade or migrate: target=leap:<version> (newer Leap release), tumbleweed (rolling release), slowroll (Tumbleweed with batched updates) or dup (full upgrade of a rolling release). Disables repositories that may not work on the target. Takes long; reboot afterwards. For SUSE Linux Enterprise use to_sle.",
+    risk: Risk::Dangerous,
+    params: &[Param::text("target", "What to move to, as listed in the upgrade options").check(target_ok), KEEP],
+};
+
+const TO_SLE: ActionSpec = ActionSpec {
+    id: "upgrade.to_sle",
+    title: "SUSE Linux Enterprise",
+    description: "Migrate Leap 15.6 to SUSE Linux Enterprise Server 15 SP6 for official support by SUSE. Needs a subscription: the email and registration code from the SUSE Customer Center. One-way.",
     risk: Risk::Dangerous,
     params: &[
-        Param::text("version", "Target Leap release, e.g. 16.1 (Leap only)").optional(),
-        Param::boolean("disable_third_party", "Disable all repositories that are not openSUSE's own (recommended)").default("true"),
-        Param::text(
-            "keep_enabled",
-            "Repository aliases to keep enabled anyway, space separated. Only release-independent ones: a kept repository that can't be refreshed for the new release makes zypper dup fail. Repositories using $releasever that already have the new release are kept automatically",
-        )
-        .default("google-chrome")
-        .check(validate::names),
+        Param::text("email", "Email address of your SUSE Customer Center account").check(email_ok),
+        Param::text("regcode", "Registration code from the SUSE Customer Center").secret().check(regcode_ok),
+        KEEP,
     ],
 };
 
@@ -42,52 +88,96 @@ pub fn register(reg: &mut Registry) {
     reg.module(ModuleSpec {
         id: "upgrade",
         title: "Upgrade",
-        tagline: "New releases and full upgrades",
+        tagline: "New releases and migrations",
         overview: TARGETS.id,
-        row_actions: &[DISTRIBUTION.id],
+        row_actions: &[MIGRATE.id],
     });
     reg.action(TARGETS, |ctx, _| async move { targets(&ctx).await });
-    reg.action(DISTRIBUTION, |ctx, args| async move {
+    reg.action(MIGRATE, |ctx, args| async move {
         let keep: Vec<String> = args.str("keep_enabled").split_whitespace().map(str::to_owned).collect();
-        upgrade(&ctx, args.opt_str("version"), args.bool("disable_third_party"), &keep).await
+        migrate(&ctx, args.str("target"), &keep).await
     });
-
+    reg.action(TO_SLE, |ctx, args| async move {
+        let keep: Vec<String> = args.str("keep_enabled").split_whitespace().map(str::to_owned).collect();
+        to_sle(&ctx, args.str("email"), args.str("regcode"), &keep).await
+    });
     reg.shell(TARGETS.id, |_, _| vec!["cat /etc/os-release".into(), "zypper repos --uri".into()]);
-    reg.shell(DISTRIBUTION.id, |a, d| {
-        if d.rolling {
-            return if d.transactional {
-                vec!["sudo transactional-update --continue dup".into(), "sudo reboot".into()]
-            } else {
-                vec!["sudo zypper dup".into(), "sudo reboot".into()]
-            };
-        }
-        let v = sq(a.opt_str("version").unwrap_or("<version>"));
-        let (repos_pkg, url) = if d.id == "opensuse-leap-micro" {
-            (
-                "openSUSE-repos-LeapMicro",
-                format!("https://download.opensuse.org/distribution/leap-micro/{v}/product/repo/openSUSE-Leap-Micro-{v}-$(uname -m)/"),
-            )
-        } else {
-            ("openSUSE-repos-Leap", format!("https://download.opensuse.org/distribution/leap/{v}/repo/oss"))
-        };
-        // On transactional systems each step runs inside the new snapshot.
-        let z = if d.transactional { "sudo transactional-update --continue run zypper" } else { "sudo zypper" };
-        let mut cmds = Vec::new();
-        if a.bool("disable_third_party") {
-            cmds.push(format!("{z} modifyrepo --disable <every repository except openSUSE:*, NVIDIA:* and {}>", a.str("keep_enabled")));
-        }
-        cmds.extend([
-            format!("{z} install --force-resolution {repos_pkg}"),
-            format!("{z} refresh-services"),
-            format!("{z} addrepo --refresh {url} tmp"),
-            format!("{z} install --repo tmp --from tmp --force-resolution {repos_pkg}"),
-            format!("{z} removerepo tmp"),
-            format!("{z} refresh-services"),
-            format!("{z} --releasever {v} dup --force-resolution --allow-vendor-change --download-in-advance"),
+    reg.shell(MIGRATE.id, |a, d| migrate_shell(a.str("target"), a.str("keep_enabled"), d));
+    reg.shell(TO_SLE.id, |a, _| {
+        vec![
+            format!("sudo zypper modifyrepo --disable <every repository except openSUSE:* and {}>", a.str("keep_enabled")),
+            "sudo zypper install suseconnect-ng snapper grub2-snapper-plugin".into(),
+            "sudo cp /etc/os-release /etc/os-release.backup   # then write a SLES os-release and product".into(),
+            "sudo rpm -e --nodeps openSUSE-release openSUSE-repos".into(),
+            format!("sudo suseconnect -e {} -r REGCODE", sq(a.str("email"))),
+            "sudo suseconnect -p PackageHub/15.6/$(uname -m)".into(),
+            "sudo zypper dup --force-resolution --allow-vendor-change --download-in-advance".into(),
+            "sudo zypper install branding-SLE-15 grub2-branding-SLE wallpaper-branding-SLE-15 plymouth-branding-SLE systemd-presets-branding-SLE"
+                .into(),
             "sudo reboot".into(),
-        ]);
-        cmds
+        ]
     });
+}
+
+fn migrate_shell(target: &str, keep: &str, d: &Distro) -> Vec<String> {
+    let z = if d.transactional { "sudo transactional-update --continue run zypper" } else { "sudo zypper" };
+    if target == "dup" {
+        return vec![
+            if d.transactional { "sudo transactional-update --continue dup".into() } else { "sudo zypper dup".into() },
+            "sudo reboot".into(),
+        ];
+    }
+    let mut cmds = vec![format!("{z} modifyrepo --disable <every repository except openSUSE:*, NVIDIA:* and {keep}>")];
+    let (url, pkg, extra) = match target {
+        "tumbleweed" => ("https://download.opensuse.org/tumbleweed/repo/oss/".to_owned(), "openSUSE-repos-Tumbleweed", ""),
+        "slowroll" => ("https://download.opensuse.org/slowroll/repo/oss/".to_owned(), "openSUSE-repos-Slowroll", " --allow-downgrade"),
+        t => {
+            let v = sq(t.strip_prefix("leap:").unwrap_or("<version>"));
+            let (pkg, url) = if d.id == "opensuse-leap-micro" {
+                (
+                    "openSUSE-repos-LeapMicro",
+                    format!("https://download.opensuse.org/distribution/leap-micro/{v}/product/repo/openSUSE-Leap-Micro-{v}-$(uname -m)/"),
+                )
+            } else {
+                ("openSUSE-repos-Leap", format!("https://download.opensuse.org/distribution/leap/{v}/repo/oss"))
+            };
+            cmds.extend([
+                format!("{z} install --force-resolution {pkg}"),
+                format!("{z} refresh-services"),
+                format!("{z} addrepo --refresh {url} tmp"),
+                format!("{z} install --repo tmp --from tmp --force-resolution {pkg}"),
+                format!("{z} removerepo tmp"),
+                format!("{z} refresh-services"),
+                format!("{z} --releasever {v} dup --force-resolution --allow-vendor-change --download-in-advance"),
+                format!(
+                    "{z} --releasever {v} install --force-resolution {}   # the target's release package",
+                    if d.id == "opensuse-leap-micro" {
+                        "<release package>"
+                    } else if v.starts_with("15.") {
+                        "openSUSE-release"
+                    } else {
+                        "Leap-release"
+                    }
+                ),
+                "sudo reboot".into(),
+            ]);
+            return cmds;
+        }
+    };
+    cmds.extend([
+        format!("{z} addrepo --refresh {url} tmp"),
+        format!("{z} install --repo tmp --from tmp --force-resolution{extra} {pkg}"),
+        format!("{z} removerepo tmp"),
+        format!("{z} refresh-services"),
+        format!("{z} dup --force-resolution --allow-vendor-change --download-in-advance{extra}"),
+        format!("{z} install --force-resolution{extra} openSUSE-release   # the target's release package"),
+        "sudo reboot".into(),
+    ]);
+    cmds
+}
+
+fn is_slowroll(d: &Distro) -> bool {
+    d.id.contains("slowroll") || d.pretty.contains("Slowroll")
 }
 
 /// The Leap line this system follows: (get.opensuse.org key, helper flavour,
@@ -183,7 +273,13 @@ async fn repos_to_disable(ctx: &Context, keep: &[String], target: &str) -> Resul
             Fate::CheckRelease => checks.push((alias.to_owned(), raw)),
         }
     }
-    // Probe the $releasever repositories concurrently.
+    // Moving to a rolling release, $releasever has no meaning for these
+    // repositories (Packman's openSUSE_Leap_$releasever has no Tumbleweed
+    // tree), so they are disabled. Otherwise probe them concurrently.
+    if target == ROLLING {
+        disable.extend(checks.into_iter().map(|(alias, _)| alias));
+        return Ok((disable, kept));
+    }
     let tasks: Vec<_> = checks
         .into_iter()
         .map(|(alias, raw)| {
@@ -228,77 +324,219 @@ fn x86_64_v2() -> bool {
 
 async fn targets(ctx: &Context) -> Result<Output> {
     let d = &ctx.distro;
-    let mut t = Table::new(&[("version", "Target"), ("state", "State"), ("notes", "What happens")]);
+    let arch = std::env::consts::ARCH;
+    let keep = ["google-chrome".to_owned()];
+    let mut t = Table::new(&[
+        ("target", "Target"),
+        ("title", "Move to"),
+        ("kind", "Kind"),
+        ("status", "Status"),
+        ("description", "What it means"),
+        ("notes", "What happens"),
+    ]);
+    let repo_notes = |disable: &[String], kept: &[String]| {
+        let mut n = Vec::new();
+        if !disable.is_empty() {
+            n.push(format!("disables {} repositories: {}", disable.len(), disable.join(", ")));
+        }
+        if !kept.is_empty() {
+            n.push(format!("keeps {}", kept.join(", ")));
+        }
+        n.join("; ")
+    };
+    let rolling_repos = if leap_line(d).is_some() || d.rolling { repos_to_disable(ctx, &keep, ROLLING).await.ok() } else { None };
+    let rolling_notes = rolling_repos.as_ref().map(|(dis, kept)| repo_notes(dis, kept)).unwrap_or_default();
+
     if d.rolling {
         let how = if d.transactional {
             "transactional-update dup into a new snapshot; reboot to use it"
         } else {
-            "full distribution upgrade with zypper dup"
+            "zypper dup: the normal way to update a rolling release"
         };
-        t.push(vec!["rolling".into(), "rolling".into(), how.into()]);
+        t.push(vec![
+            "dup".into(),
+            format!("Full upgrade of {}", d.pretty),
+            "upgrade".into(),
+            "ready".into(),
+            "Bring the system up to the latest snapshot.".into(),
+            how.into(),
+        ]);
+        if !d.transactional {
+            if is_slowroll(d) {
+                let status = if matches!(arch, "x86_64" | "aarch64") { "ready" } else { "not available" };
+                t.push(vec![
+                    "tumbleweed".into(),
+                    "openSUSE Tumbleweed".into(),
+                    "migrate".into(),
+                    status.into(),
+                    "Rolling release with daily updates: always the latest software.".into(),
+                    rolling_notes.clone(),
+                ]);
+            } else {
+                let status = if arch == "x86_64" { "ready" } else { "not available" };
+                t.push(vec![
+                    "slowroll".into(),
+                    "openSUSE Slowroll".into(),
+                    "migrate".into(),
+                    status.into(),
+                    "Tumbleweed with batched updates about once a month: rolling, but calmer.".into(),
+                    rolling_notes.clone(),
+                ]);
+            }
+        }
         return Ok(Output::Table(t));
     }
+
     let Some((key, flavour, line)) = leap_line(d) else {
         return Ok(Output::Text(format!("Upgrades from {} are not supported yet.", if d.pretty.is_empty() { &d.id } else { &d.pretty })));
     };
-    let releases = leap_releases(key, &d.version).await?;
-    if releases.is_empty() {
-        return Ok(Output::Text(format!("{} is the newest {line} release.", d.pretty)));
+    match leap_releases(key, &d.version).await {
+        Ok(releases) => {
+            for (ver, state) in releases {
+                let (disable, kept) = repos_to_disable(ctx, &keep, &ver).await?;
+                let mut notes = vec![format!("switch openSUSE repos to {ver}, then zypper --releasever {ver} dup")];
+                if d.transactional {
+                    notes.push("inside a new snapshot; reboot to use it".into());
+                }
+                let r = repo_notes(&disable, &kept);
+                if !r.is_empty() {
+                    notes.push(r);
+                }
+                let major: u32 = ver.split('.').next().and_then(|m| m.parse().ok()).unwrap_or(0);
+                let status = if flavour == "leap" && arch == "x86_64" && major >= 16 && !x86_64_v2() {
+                    notes.insert(0, "needs an x86-64-v2 CPU".into());
+                    "not available".to_owned()
+                } else if state.eq_ignore_ascii_case("stable") {
+                    "ready".to_owned()
+                } else {
+                    state.to_lowercase()
+                };
+                t.push(vec![
+                    format!("leap:{ver}"),
+                    format!("{line} {ver}"),
+                    "upgrade".into(),
+                    status,
+                    "A newer release of what you run now: same experience, newer software.".into(),
+                    notes.join("; "),
+                ]);
+            }
+        }
+        Err(e) => t.push(vec![
+            "leap:?".into(),
+            format!("Newer {line}"),
+            "upgrade".into(),
+            "not available".into(),
+            "Could not fetch the release list from get.opensuse.org.".into(),
+            format!("{e:#}"),
+        ]),
     }
-    let keep = ["google-chrome".to_owned()];
-    for (ver, state) in releases {
-        let mut notes = vec![format!("switch openSUSE repos to {ver}, then zypper --releasever {ver} dup")];
-        if d.transactional {
-            notes.push("inside a new snapshot (transactional-update run); reboot to use it".into());
-        }
-        let (disable, kept) = repos_to_disable(ctx, &keep, &ver).await?;
-        if !disable.is_empty() {
-            notes.push(format!("disables {} other repositories: {}", disable.len(), disable.join(", ")));
-        }
-        if !kept.is_empty() {
-            notes.push(format!("keeps {}", kept.join(", ")));
-        }
-        let major: u32 = ver.split('.').next().and_then(|m| m.parse().ok()).unwrap_or(0);
-        if flavour == "leap" && std::env::consts::ARCH == "x86_64" && major >= 16 && !x86_64_v2() {
-            notes.insert(0, "NOT POSSIBLE: needs an x86-64-v2 CPU".into());
-        }
-        t.push(vec![ver, state.to_lowercase(), notes.join("; ")]);
+    if flavour == "leap" && !d.transactional {
+        let tw = if matches!(arch, "x86_64" | "aarch64") { "ready" } else { "not available" };
+        t.push(vec![
+            "tumbleweed".into(),
+            "openSUSE Tumbleweed".into(),
+            "migrate".into(),
+            tw.into(),
+            "Rolling release: always the latest software, updated continuously. Going back to Leap later means reinstalling.".into(),
+            rolling_notes.clone(),
+        ]);
+        let sr = if arch == "x86_64" { "ready" } else { "not available" };
+        t.push(vec![
+            "slowroll".into(),
+            "openSUSE Slowroll".into(),
+            "migrate".into(),
+            sr.into(),
+            "Tumbleweed with batched updates about once a month: rolling, but calmer.".into(),
+            rolling_notes,
+        ]);
+        let (title, status, notes) = if d.version == "15.6" {
+            (
+                "SUSE Linux Enterprise Server 15 SP6".to_owned(),
+                "ready",
+                "needs a subscription: email and registration code from the SUSE Customer Center".to_owned(),
+            )
+        } else {
+            (
+                format!("SUSE Linux Enterprise ({line} {} → SLES)", d.version),
+                "not available",
+                format!("not supported from {line} {} yet; see {SUSE_SERVER}", d.version),
+            )
+        };
+        t.push(vec!["sle".into(), title, "support".into(), status.into(), "Official support by SUSE, with a subscription. One-way.".into(), notes]);
     }
     Ok(Output::Table(t))
 }
 
-async fn upgrade(ctx: &Context, version: Option<&str>, disable_third_party: bool, keep: &[String]) -> Result<Output> {
+async fn migrate(ctx: &Context, target: &str, keep: &[String]) -> Result<Output> {
     let d = &ctx.distro;
-    if d.rolling {
-        if d.transactional {
-            zypper::transactional(ctx, &["dup"]).await?;
-        } else {
-            zypper::change(ctx, &["dup"]).await?;
+    match target {
+        "dup" if d.rolling => {
+            if d.transactional {
+                zypper::transactional(ctx, &["dup"]).await?;
+            } else {
+                zypper::change(ctx, &["dup"]).await?;
+            }
+            Ok(Output::Done(format!("{} is fully upgraded; reboot if the kernel or core libraries changed", d.pretty)))
         }
-        return Ok(Output::Done(format!("{} is fully upgraded; reboot if the kernel or core libraries changed", d.pretty)));
+        "dup" => bail!("a full dup is for rolling releases; on {} pick a newer release", d.pretty),
+        "sle" => bail!("migrating to SUSE Linux Enterprise needs a registration code: use upgrade.to_sle"),
+        "tumbleweed" | "slowroll" => {
+            let (aliases, _) = repos_to_disable(ctx, keep, ROLLING).await?;
+            let mut args = vec!["migrate-rolling", target];
+            args.extend(aliases.iter().map(String::as_str));
+            helper::run(ctx, &args).await?;
+            Ok(Output::Done(done(&format!("openSUSE {}", if target == "slowroll" { "Slowroll" } else { "Tumbleweed" }), &aliases)))
+        }
+        t => {
+            let version = t.strip_prefix("leap:").ok_or_else(|| anyhow!("unknown target {t}"))?;
+            let Some((key, flavour, line)) = leap_line(d) else {
+                bail!("upgrades from {} are not supported yet", d.id);
+            };
+            if !leap_releases(key, &d.version).await?.iter().any(|(v, _)| v == version) {
+                bail!("{version} is not an available upgrade from {}", d.version);
+            }
+            let (aliases, _) = repos_to_disable(ctx, keep, version).await?;
+            let mut args = vec!["migrate-leap", flavour, version];
+            args.extend(aliases.iter().map(String::as_str));
+            helper::run(ctx, &args).await?;
+            Ok(Output::Done(done(&format!("{line} {version}"), &aliases)))
+        }
     }
-    let Some((key, flavour, _)) = leap_line(d) else {
-        bail!("upgrades from {} are not supported yet", d.id);
-    };
-    let Some(version) = version.filter(|v| *v != "rolling") else {
-        bail!("which Leap release? see upgrade.targets");
-    };
-    validate::release_version(version).map_err(|e| anyhow!(e))?;
-    if !leap_releases(key, &d.version).await?.iter().any(|(v, _)| v == version) {
-        bail!("{version} is not an available upgrade from {}", d.version);
-    }
-    let aliases: Vec<String> = if disable_third_party { repos_to_disable(ctx, keep, version).await?.0 } else { Vec::new() };
-    let mut args = vec!["migrate-leap", flavour, version];
-    args.extend(aliases.iter().map(String::as_str));
-    helper::run(ctx, &args).await?;
-    let mut msg = format!("Upgraded to {version}; reboot to finish");
-    if !aliases.is_empty() {
+}
+
+fn done(what: &str, disabled: &[String]) -> String {
+    let mut msg = format!("Moved to {what}; reboot to finish");
+    if !disabled.is_empty() {
         msg.push_str(&format!(
-            ". Disabled {}: enable them again (Repositories) once they have builds for {version}. Packages they provided may be orphaned now: zypper packages --orphaned",
-            aliases.join(", ")
+            ". Disabled {}: enable them again (Repositories) once they work for {what}. Packages they provided may be orphaned now: zypper packages --orphaned",
+            disabled.join(", ")
         ));
     }
-    Ok(Output::Done(msg))
+    msg
+}
+
+/// The registration code reaches yaist-helper through a file only the user
+/// can read, never on a command line.
+async fn to_sle(ctx: &Context, email: &str, regcode: &str, keep: &[String]) -> Result<Output> {
+    let d = &ctx.distro;
+    if d.id != "opensuse-leap" || d.version != "15.6" || d.transactional {
+        bail!("migrating to SUSE Linux Enterprise is supported from Leap 15.6 for now; see {SUSE_SERVER}");
+    }
+    let (aliases, _) = repos_to_disable(ctx, keep, ROLLING).await?;
+    let dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
+    let path = format!("{dir}/yaist-regcode-{}", std::process::id());
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path)?;
+        f.write_all(regcode.as_bytes())?;
+    }
+    let mut args = vec!["migrate-sle", email, path.as_str()];
+    args.extend(aliases.iter().map(String::as_str));
+    let result = helper::run(ctx, &args).await;
+    let _ = std::fs::remove_file(&path);
+    result?;
+    Ok(Output::Done(done("SUSE Linux Enterprise Server 15 SP6", &aliases)))
 }
 
 #[cfg(test)]

@@ -108,6 +108,9 @@ fn every_action_teaches_its_terminal_command() {
                     "address" => "192.168.1.20",
                     "uri" => "ipp://printer.local/ipp/print",
                     "link" => "https://chat.opensuse.org/",
+                    "target" => "tumbleweed",
+                    "email" => "geeko@example.org",
+                    "regcode" => "ABCD-1234",
                     _ => "example",
                 },
             };

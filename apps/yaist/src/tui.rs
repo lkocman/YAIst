@@ -911,7 +911,7 @@ impl App {
                 ]));
                 out.push(Line::from(vec![Span::styled(" │ ", self.style(risk)), Span::styled(p.command.clone(), self.style(t.ink))]));
                 for param in p.spec.params {
-                    let v = p.args.display(param.name);
+                    let v = p.args.shown(&p.spec, param.name);
                     let v = if v.is_empty() { "(default)".to_owned() } else { v };
                     out.push(Line::from(vec![
                         Span::styled(" │ ", self.style(risk)),
@@ -1096,6 +1096,7 @@ impl App {
                     }
                 }
                 ParamKind::Choice(_) => format!("‹ {v} ›"),
+                _ if p.secret => format!("{}{}", "•".repeat(v.chars().count()), if sel { "▏" } else { "" }),
                 _ => format!("{v}{}", if sel { "▏" } else { "" }),
             };
             let st = if sel { Style::new().fg(c(t.ink_strong)).bg(c(t.sunken)) } else { self.style(t.ink) };

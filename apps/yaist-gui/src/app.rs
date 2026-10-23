@@ -313,6 +313,9 @@ impl App {
         if m.spec.id == "community" {
             return self.community_page(ui, v);
         }
+        if m.spec.id == "upgrade" {
+            return self.upgrade_page(ui, v);
+        }
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
             widgets::tag(ui, &format!("{:02}", i), t.module(i), t.invert_fg);
@@ -707,6 +710,116 @@ impl App {
         ui.painter().rect_filled(egui::Rect::from_min_size(r.min, vec2(4.0, r.height())), CornerRadius::ZERO, colour);
     }
 
+    /// Upgrade and migration targets as large tiles, like the Community page.
+    fn upgrade_page(&mut self, ui: &mut Ui, v: &View) {
+        let t = Tokens::get(ui.ctx());
+        let i = v.selected;
+        let m = &v.modules[i];
+        egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                widgets::tag(ui, &format!("{i:02}"), t.module(i), t.invert_fg);
+                widgets::eyebrow(ui, "module", "Upgrade");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if widgets::button_sized(ui, "Refresh", Kind::Secondary, 0.0, 28.0).clicked() {
+                        self.acts.push(Act::Refresh(i));
+                    }
+                });
+            });
+            ui.add_space(12.0);
+            ui.label(RichText::new("Upgrade or migrate").font(FontId::new(32.0, theme::display())).color(t.ink_strong));
+            ui.label(
+                RichText::new(format!(
+                    "You run {}. Repositories that may not work on the target are disabled first, and a snapshot lets you roll back.",
+                    v.distro
+                ))
+                .size(14.0)
+                .color(t.muted),
+            );
+            ui.add_space(18.0);
+            let table = match &m.panel {
+                Panel::Ready(Output::Table(table)) => table.clone(),
+                Panel::Ready(Output::Text(s)) => {
+                    ui.label(RichText::new(s).color(t.ink));
+                    return;
+                }
+                Panel::Failed(e) => {
+                    ui.label(RichText::new(e).color(t.bad));
+                    return;
+                }
+                _ => {
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Spinner::new().size(14.0).color(t.muted));
+                        widgets::hud(ui, "checking what this system can move to", t.muted);
+                    });
+                    return;
+                }
+            };
+            let cols = if ui.available_width() > 760.0 { 2 } else { 1 };
+            let w = (ui.available_width() / cols as f32).floor();
+            let cell = |row: &[String], key: &str| table.cell(row, key).unwrap_or("").to_owned();
+            for chunk in table.rows.chunks(cols) {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    for row in chunk {
+                        let (target, title, kind, status) = (cell(row, "target"), cell(row, "title"), cell(row, "kind"), cell(row, "status"));
+                        let (description, notes) = (cell(row, "description"), cell(row, "notes"));
+                        let available = status != "not available";
+                        let colour = match kind.as_str() {
+                            "upgrade" => t.module(0),
+                            "migrate" => t.module(1),
+                            _ => t.module(3),
+                        };
+                        let frame = Frame::new().fill(t.bg).stroke(t.hairline()).inner_margin(Margin::same(18));
+                        let (rect, _) = ui.allocate_exact_size(vec2(w, 230.0), egui::Sense::hover());
+                        let mut cu = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+                        frame.show(&mut cu, |ui| {
+                            ui.set_width(w - 36.0);
+                            ui.set_height(194.0);
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 8.0;
+                                widgets::tag(ui, &kind, colour, t.invert_fg);
+                                widgets::badge(ui, &status, t.tone(tone_of(&status)));
+                            });
+                            ui.add_space(8.0);
+                            ui.label(RichText::new(&title).font(FontId::new(22.0, theme::display())).color(if available {
+                                t.ink_strong
+                            } else {
+                                t.muted
+                            }));
+                            ui.label(RichText::new(&description).size(13.5).color(t.ink));
+                            if !notes.is_empty() {
+                                ui.add_space(2.0);
+                                ui.add(egui::Label::new(RichText::new(&notes).size(12.0).color(t.faint)).truncate());
+                            }
+                            ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                                let label = match (kind.as_str(), target.as_str()) {
+                                    (_, "dup") => "Upgrade now".to_owned(),
+                                    ("upgrade", _) => format!("Upgrade to {}", target.trim_start_matches("leap:")),
+                                    ("support", _) => "Register and migrate".to_owned(),
+                                    _ => "Migrate".to_owned(),
+                                };
+                                let kind_btn = if available { Kind::Primary } else { Kind::Secondary };
+                                let resp = ui.add_enabled_ui(available, |ui| widgets::button(ui, &label, kind_btn, 180.0)).inner;
+                                if resp.on_hover_text(&notes).clicked() {
+                                    if target == "sle" {
+                                        if let Some(spec) = self.session.registry.get("upgrade.to_sle").copied() {
+                                            self.acts.push(Act::Form(Form::new(spec, &Map::new())));
+                                        }
+                                    } else {
+                                        let mut raw = Map::new();
+                                        raw.insert("target".into(), Value::String(target.clone()));
+                                        self.acts.push(Act::Propose("upgrade.migrate", raw));
+                                    }
+                                }
+                            });
+                        });
+                    }
+                });
+            }
+        });
+    }
+
     /// The community places as grouped cards that open in the browser.
     fn community_page(&mut self, ui: &mut Ui, v: &View) {
         let t = Tokens::get(ui.ctx());
@@ -949,7 +1062,7 @@ impl App {
                 egui::Grid::new(("plan", p.id)).num_columns(2).spacing(vec2(16.0, 4.0)).show(ui, |ui| {
                     for param in p.spec.params {
                         widgets::hud(ui, &param.name.replace('_', " "), t.faint);
-                        let v = p.args.display(param.name);
+                        let v = p.args.shown(&p.spec, param.name);
                         ui.label(RichText::new(if v.is_empty() { "default".into() } else { v }).color(t.ink));
                         ui.end_row();
                     }
@@ -1037,7 +1150,9 @@ impl App {
                         ui.label(RichText::new(p.help).size(12.0).color(t.faint));
                     }
                     ParamKind::Text | ParamKind::Integer => {
-                        let edit = ui.add(egui::TextEdit::singleline(&mut form.values[i]).desired_width(f32::INFINITY).margin(vec2(10.0, 8.0)));
+                        let edit = ui.add(
+                            egui::TextEdit::singleline(&mut form.values[i]).password(p.secret).desired_width(f32::INFINITY).margin(vec2(10.0, 8.0)),
+                        );
                         if i == 0 && !ui.ctx().memory(|m| m.has_focus(edit.id)) && form.values[i].is_empty() {
                             edit.request_focus();
                         }

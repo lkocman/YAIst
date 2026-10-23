@@ -140,7 +140,8 @@ User: is nginx running? -> call services__status with unit=nginx, then answer
 User: update the system -> call packages__update_system
 User: set up Steam -> call media__set_up_gaming
 User: install VLC -> call packages__flatpak_install with app=org.videolan.VLC (desktop apps come from Flathub, per user; command-line tools and system software are RPMs)
-User: upgrade to the next Leap -> call upgrade__targets, then upgrade__distribution with the newest version
+User: upgrade to the next Leap -> call upgrade__targets, then upgrade__migrate with target=leap:<newest version>
+User: switch to Tumbleweed -> call upgrade__migrate with target=tumbleweed
 User: take a snapshot before I start -> call snapshots__create with a short description
 User: why did my service fail? -> call services__list with state=failed, then services__status for the failed one, then explain
 User: allow the web server to make network connections -> call selinux__set_boolean with boolean=httpd_can_network_connect, value=true"

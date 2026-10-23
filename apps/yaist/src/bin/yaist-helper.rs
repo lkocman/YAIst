@@ -13,6 +13,8 @@
 //!   yaist-helper migrate-leap leap|leap-micro <version> [repo-alias-to-disable…]
 //!   yaist-helper nvidia-setup leap|tumbleweed
 //!   yaist-helper codecs-packman
+//!   yaist-helper migrate-rolling tumbleweed|slowroll [repo-alias-to-disable…]
+//!   yaist-helper migrate-sle <email> <regcode-file> [repo-alias-to-disable…]
 
 use std::path::Path;
 use std::process::{Command, ExitCode};
@@ -61,7 +63,9 @@ fn run(args: &[String]) -> R {
         Some("migrate-leap") => migrate_leap(arg(1)?, arg(2)?, &args[3..]),
         Some("nvidia-setup") => nvidia_setup(arg(1)?),
         Some("codecs-packman") => codecs_packman(),
-        _ => Err("usage: yaist-helper snapper-list|snapper-create|snapper-status|snapper-delete|snapper-rollback|migrate-leap …".into()),
+        Some("migrate-rolling") => migrate_rolling(arg(1)?, &args[2..]),
+        Some("migrate-sle") => migrate_sle(arg(1)?, arg(2)?, &args[3..]),
+        _ => Err("usage: yaist-helper snapper-list|snapper-create|snapper-status|snapper-delete|snapper-rollback|migrate-leap|migrate-rolling|migrate-sle|nvidia-setup|codecs-packman …".into()),
     }
 }
 
@@ -144,6 +148,159 @@ fn nvidia_setup(flavour: &str) -> R {
     Ok(())
 }
 
+fn disable_repos(tx: bool, aliases: &[String]) -> R {
+    for alias in aliases {
+        validate::name(alias)?;
+        if zypper_step(tx, &["modifyrepo", "--disable", "--", alias]).is_err() {
+            println!("    (repository {alias} not found, skipped)");
+        }
+    }
+    Ok(())
+}
+
+fn is_slowroll() -> bool {
+    os_release("NAME").contains("Slowroll") || os_release("ID").contains("slowroll")
+}
+
+/// Leap to Tumbleweed or Slowroll, or between the two, the way
+/// opensuse-migration-tool does: openSUSE-repos for the target from its own
+/// oss repository, then a full dup (allowing downgrades for Slowroll, which
+/// lags Tumbleweed).
+fn migrate_rolling(target: &str, disable: &[String]) -> R {
+    let id = os_release("ID");
+    let from_leap = id == "opensuse-leap";
+    let from_tw = id == "opensuse-tumbleweed" && !is_slowroll();
+    let from_slowroll = is_slowroll();
+    let arch = std::env::consts::ARCH;
+    let (url, repos_pkg, downgrade) = match target {
+        "tumbleweed" if from_leap || from_slowroll => {
+            let url = match arch {
+                "x86_64" => "https://download.opensuse.org/tumbleweed/repo/oss/".to_owned(),
+                "aarch64" => "https://download.opensuse.org/ports/aarch64/tumbleweed/repo/oss/".to_owned(),
+                _ => return Err(format!("migrating to Tumbleweed is not supported on {arch} yet")),
+            };
+            (url, "openSUSE-repos-Tumbleweed", from_slowroll)
+        }
+        "slowroll" if from_leap || from_tw => {
+            if arch != "x86_64" {
+                return Err(format!("Slowroll is only built for x86_64, not {arch}"));
+            }
+            ("https://download.opensuse.org/slowroll/repo/oss/".to_owned(), "openSUSE-repos-Slowroll", true)
+        }
+        _ => return Err(format!("migrating from {} to {target} is not supported", os_release("NAME"))),
+    };
+    let tx = transactional();
+    disable_repos(tx, disable)?;
+    zypper_step(tx, &["addrepo", "--refresh", "--", &url, TMP_REPO])?;
+    let mut install = vec!["install", "--repo", TMP_REPO, "--force-resolution", "--from", TMP_REPO];
+    if downgrade {
+        install.push("--allow-downgrade");
+    }
+    install.push(repos_pkg);
+    let installed = zypper_step(tx, &install);
+    let _ = zypper_step(tx, &["removerepo", "--", TMP_REPO]);
+    installed?;
+    zypper_step(tx, &["refresh-services"])?;
+    let mut dup = vec!["dup", "--force-resolution", "--allow-vendor-change", "--download-in-advance"];
+    if downgrade {
+        dup.push("--allow-downgrade");
+    }
+    zypper_step(tx, &dup)?;
+    // Tumbleweed and Slowroll both use openSUSE-release (Slowroll its own build).
+    ensure_release(tx, &[], "openSUSE-release", downgrade, "opensuse-tumbleweed")?;
+    println!("==> migrated to {target}; reboot to finish");
+    Ok(())
+}
+
+/// The SLES product description for a Leap version, shipped with YAiST.
+fn sles_product(version: &str) -> Option<std::path::PathBuf> {
+    let name = format!("SLES-{version}.prod");
+    let dev = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.parent()?.parent()?.join("assets/migration").join(&name)));
+    [Some(Path::new("/usr/share/yaist/migration").join(&name)), dev].into_iter().flatten().find(|p| p.is_file())
+}
+
+/// Leap 15.6 to SUSE Linux Enterprise Server 15 SP6, the way
+/// opensuse-migration-tool does: SLES os-release and product, registration
+/// with SCC (and PackageHub), dup, SLE branding. The registration code comes
+/// in a file that only the user can read, so it never shows on a command line
+/// here; it is deleted at once.
+fn migrate_sle(email: &str, regcode_file: &str, disable: &[String]) -> R {
+    let email_ok = email.split_once('@').is_some_and(|(u, d)| !u.is_empty() && d.contains('.'))
+        && email.chars().all(|c| c.is_ascii_alphanumeric() || "@._%+-".contains(c))
+        && !email.starts_with('-');
+    if !email_ok {
+        return Err("invalid email address".into());
+    }
+    let regcode = std::fs::read_to_string(regcode_file).map_err(|e| format!("reading the registration code: {e}"))?;
+    let _ = std::fs::remove_file(regcode_file);
+    let regcode = regcode.trim().to_owned();
+    if regcode.len() < 4 || regcode.len() > 64 || !regcode.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err("invalid registration code".into());
+    }
+    if os_release("ID") != "opensuse-leap" {
+        return Err("this system is not openSUSE Leap".into());
+    }
+    if transactional() {
+        return Err("migrating immutable systems to SLE is not supported".into());
+    }
+    let version = os_release("VERSION_ID");
+    let product = sles_product(&version).ok_or_else(|| format!("migrating Leap {version} to SLE is not supported yet"))?;
+    let (major, minor) = version.split_once('.').ok_or("unexpected VERSION_ID")?;
+    let arch = std::env::consts::ARCH;
+
+    disable_repos(false, disable)?;
+    zypper(&["install", "suseconnect-ng", "snapper", "grub2-snapper-plugin"])?;
+    println!("==> backing up /etc/os-release as /etc/os-release.backup");
+    std::fs::copy("/etc/os-release", "/etc/os-release.backup").map_err(|e| e.to_string())?;
+    let _ = exec("/usr/bin/rpm", &["-e", "--nodeps", "openSUSE-release"]);
+    let _ = exec("/usr/bin/rpm", &["-e", "--nodeps", "openSUSE-repos"]);
+    let os_release = format!(
+        "NAME=\"SLES\"\nVERSION=\"{major}-SP{minor}\"\nVERSION_ID=\"{version}\"\nPRETTY_NAME=\"SUSE Linux Enterprise Server {major} SP{minor}\"\nID=\"sles\"\nID_LIKE=\"suse\"\nANSI_COLOR=\"0;32\"\nCPE_NAME=\"cpe:/o:suse:sles:{major}:sp{minor}\"\nDOCUMENTATION_URL=\"https://documentation.suse.com/\"\n"
+    );
+    // /etc/os-release may be a symlink to /usr/lib/os-release; replace the link.
+    let _ = std::fs::remove_file("/etc/os-release");
+    std::fs::write("/etc/os-release", os_release).map_err(|e| e.to_string())?;
+    std::fs::copy(&product, "/etc/products.d/SLES.prod").map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file("/etc/products.d/baseproduct");
+    std::os::unix::fs::symlink("/etc/products.d/SLES.prod", "/etc/products.d/baseproduct").map_err(|e| e.to_string())?;
+    println!("==> registering with SUSE Customer Center as {email}");
+    let status = Command::new("/usr/bin/suseconnect")
+        .args(["-e", email, "-r", &regcode])
+        .env_clear()
+        .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+        .status()
+        .map_err(|e| format!("running suseconnect: {e}"))?;
+    if !status.success() {
+        return Err(format!("registration failed ({status}); /etc/os-release.backup holds the original"));
+    }
+    exec("/usr/bin/suseconnect", &["-p", &format!("PackageHub/{version}/{arch}")])?;
+    zypper(&["dup", "--force-resolution", "--allow-vendor-change", "--download-in-advance"])?;
+    let _ = exec(
+        "/usr/bin/rpm",
+        &[
+            "-e",
+            "--nodeps",
+            "branding-openSUSE",
+            "grub2-branding-openSUSE",
+            "wallpaper-branding-openSUSE",
+            "plymouth-branding-openSUSE",
+            "systemd-presets-branding-openSUSE",
+            "systemd-presets-branding-MicroOS",
+        ],
+    );
+    let _ = zypper(&["remove", "opensuse-welcome"]);
+    zypper(&[
+        "install",
+        &format!("branding-SLE-{major}"),
+        "grub2-branding-SLE",
+        &format!("wallpaper-branding-SLE-{major}"),
+        "plymouth-branding-SLE",
+        "systemd-presets-branding-SLE",
+    ])?;
+    println!("==> migrated to SUSE Linux Enterprise Server {major} SP{minor}; reboot to finish");
+    Ok(())
+}
+
 /// Full multimedia codecs from Packman, via opi (adds Packman and switches the
 /// multimedia packages to its builds). Third-party; not for immutable systems.
 fn codecs_packman() -> R {
@@ -152,6 +309,29 @@ fn codecs_packman() -> R {
     }
     zypper(&["install", "opi"])?;
     exec("/usr/bin/opi", &["-n", "codecs"])
+}
+
+/// After the dup, make sure the target's release package (it defines which
+/// distribution this is: os-release, products.d) is the one installed, and
+/// check os-release agrees. --force-resolution replaces a conflicting one,
+/// e.g. Leap-release by openSUSE-release when moving to Tumbleweed.
+fn ensure_release(tx: bool, global: &[&str], pkg: &str, downgrade: bool, expect_id: &str) -> R {
+    let mut args: Vec<&str> = global.to_vec();
+    args.extend(["install", "--force-resolution"]);
+    if downgrade {
+        args.push("--allow-downgrade");
+    }
+    args.push(pkg);
+    zypper_step(tx, &args)?;
+    if tx {
+        // The new snapshot isn't running yet; its os-release can't be read here.
+        return Ok(());
+    }
+    let id = os_release("ID");
+    if id != expect_id {
+        return Err(format!("after the upgrade os-release says ID={id}, expected {expect_id}; check that {pkg} is installed"));
+    }
+    Ok(())
 }
 
 /// Is this a transactional (immutable) system? Immutable Leap says so in
@@ -222,6 +402,11 @@ fn migrate_leap(flavour: &str, target: &str, disable: &[String]) -> R {
     step(&["refresh-services"])?;
     // --releasever is a global option: it goes before the command.
     step(&["--releasever", target, "dup", "--force-resolution", "--allow-vendor-change", "--download-in-advance"])?;
+    if flavour == "leap" {
+        // Leap 16 is Leap-release; Leap 15 was openSUSE-release.
+        let pkg = if major >= 16 { "Leap-release" } else { "openSUSE-release" };
+        ensure_release(tx, &["--releasever", target], pkg, false, "opensuse-leap")?;
+    }
     println!("==> upgraded to {target}; reboot to finish");
     Ok(())
 }

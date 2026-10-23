@@ -129,7 +129,7 @@ pub fn start_items(d: &Distro) -> Vec<StartItem> {
         StartItem {
             title: "Update Tumbleweed",
             text: "Bring the system up to the latest snapshot with zypper dup.",
-            start: Start::Action("upgrade.distribution"),
+            start: Start::Action("packages.update_system"),
         }
     } else {
         StartItem {

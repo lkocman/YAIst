@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icons/hicolor/scalable/apps/org.opensuse.yaist.svg" width="200" alt="YAiST logo: an aardvark at a laptop">
+</p>
+
 # YAiST
 
 A local, AI-assisted successor to YaST for openSUSE. Manage the system by

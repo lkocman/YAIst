@@ -45,20 +45,23 @@ pub struct Param {
     pub help: &'static str,
     pub default: Option<&'static str>,
     pub validate: Option<Validator>,
+    /// Never shown: masked on plan cards, in /commands and terminal
+    /// equivalents (e.g. a registration code).
+    pub secret: bool,
 }
 
 impl Param {
     pub const fn text(name: &'static str, help: &'static str) -> Self {
-        Self { name, kind: ParamKind::Text, required: true, help, default: None, validate: None }
+        Self { name, kind: ParamKind::Text, required: true, help, default: None, validate: None, secret: false }
     }
     pub const fn integer(name: &'static str, help: &'static str) -> Self {
-        Self { name, kind: ParamKind::Integer, required: true, help, default: None, validate: None }
+        Self { name, kind: ParamKind::Integer, required: true, help, default: None, validate: None, secret: false }
     }
     pub const fn boolean(name: &'static str, help: &'static str) -> Self {
-        Self { name, kind: ParamKind::Bool, required: false, help, default: Some("false"), validate: None }
+        Self { name, kind: ParamKind::Bool, required: false, help, default: Some("false"), validate: None, secret: false }
     }
     pub const fn choice(name: &'static str, options: &'static [&'static str], help: &'static str) -> Self {
-        Self { name, kind: ParamKind::Choice(options), required: true, help, default: None, validate: None }
+        Self { name, kind: ParamKind::Choice(options), required: true, help, default: None, validate: None, secret: false }
     }
     pub const fn required(mut self) -> Self {
         self.required = true;
@@ -72,6 +75,10 @@ impl Param {
     pub const fn default(mut self, value: &'static str) -> Self {
         self.required = false;
         self.default = Some(value);
+        self
+    }
+    pub const fn secret(mut self) -> Self {
+        self.secret = true;
         self
     }
     pub const fn check(mut self, validate: Validator) -> Self {
@@ -213,6 +220,15 @@ impl Args {
     pub fn bool(&self, name: &str) -> bool {
         self.0.get(name).and_then(Value::as_bool).unwrap_or(false)
     }
+    /// The value for showing to the user: secrets are masked.
+    pub fn shown(&self, spec: &ActionSpec, name: &str) -> String {
+        if spec.param(name).is_some_and(|p| p.secret) && self.0.contains_key(name) {
+            "••••••".into()
+        } else {
+            self.display(name)
+        }
+    }
+
     /// The value as the user would type it.
     pub fn display(&self, name: &str) -> String {
         match self.0.get(name) {

@@ -61,6 +61,10 @@ pub fn format(spec: &ActionSpec, args: &Args) -> String {
             continue;
         };
         let text = match v {
+            Value::String(s) if p.secret => {
+                let _ = s;
+                "••••••".to_owned()
+            }
             Value::String(s) => s.clone(),
             other => other.to_string(),
         };
@@ -180,8 +184,8 @@ pub fn translate(line: &str) -> Result<String> {
             "lu" | "list-updates" => "/packages list-updates".into(),
             "ref" | "refresh" => "/packages refresh".into(),
             "dup" | "dist-upgrade" => match opt(&["--releasever"]) {
-                Some(v) => format!("/upgrade distribution version={}", q(&v)),
-                None => "/upgrade distribution".into(),
+                Some(v) => format!("/upgrade migrate leap:{}", v),
+                None => "/upgrade migrate dup".into(),
             },
             "lr" | "repos" => "/repos list".into(),
             "ar" | "addrepo" => {
@@ -437,8 +441,8 @@ mod tests {
             ("zypper in fish", "/packages install fish"),
             ("sudo zypper install fish htop", "/packages install \"fish htop\""),
             ("/zypper se vim", "/packages search vim"),
-            ("zypper --releasever 16.1 dup", "/upgrade distribution version=16.1"),
-            ("sudo zypper -n --releasever=16.1 dup --allow-vendor-change", "/upgrade distribution version=16.1"),
+            ("zypper --releasever 16.1 dup", "/upgrade migrate leap:16.1"),
+            ("sudo zypper -n --releasever=16.1 dup --allow-vendor-change", "/upgrade migrate leap:16.1"),
             ("zypper up", "/packages update-system"),
             ("zypper ar https://example.org/repo games", "/repos add https://example.org/repo games"),
             ("zypper mr -d games", "/repos disable games"),
