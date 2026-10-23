@@ -11,6 +11,12 @@ Copyright (c) 2026 ArtCraft Team and the ArtCraft Launcher contributors,
 MIT OR Apache-2.0, used here under Apache-2.0. YAiST uses no ArtCraft names,
 logos or icons.
 
+Welcome artwork
+
+assets/art/sinking.svg (the pirate Geeko) comes from openSUSE-welcome
+(https://github.com/openSUSE/openSUSE-welcome), GPL-3.0-or-later; see
+LICENSES/GPL-3.0-or-later.txt. It is a separate file read at run time.
+
 Bundled fonts (embedded in yaist-gui unless built without the bundled-fonts feature)
 
 Inter (assets/fonts/Inter-Variable.ttf), Copyright (c) 2016 The Inter Project

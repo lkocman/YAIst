@@ -179,10 +179,9 @@ impl App {
         ui.painter().hline(r.x_range(), r.bottom() - 0.5, t.hairline());
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
-            ui.add_space(18.0);
-            ui.add(egui::Image::from_bytes("bytes://yaist-icon.svg", APP_ICON).fit_to_exact_size(vec2(32.0, 32.0)));
-            ui.add_space(10.0);
-            wordmark(ui, 21.0);
+            // The icon carries the name, so no text label beside it.
+            ui.add_space(16.0);
+            ui.add(egui::Image::from_bytes("bytes://yaist-icon.svg", APP_ICON).fit_to_exact_size(vec2(44.0, 44.0))).on_hover_text(yaist_ui::NAME);
             ui.add_space(20.0);
             widgets::rule(ui, theme::HEADER_H);
             ui.add_space(18.0);
@@ -461,11 +460,12 @@ impl App {
             // A fixed-height row: centring inside the scroll area would use its
             // whole height.
             let art = welcome::welcome_art();
-            let hero_h = if art.is_some() { 180.0 } else { 220.0 };
+            let art_has_brand = art.as_ref().is_some_and(|(_, brand)| *brand);
+            let hero_h = if art_has_brand { 180.0 } else { 220.0 };
             ui.allocate_ui_with_layout(vec2(ui.available_width(), hero_h), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 match &art {
-                    Some(uri) => {
-                        ui.add(egui::Image::new(uri.clone()).max_size(vec2(240.0, 150.0)));
+                    Some((uri, _)) => {
+                        ui.add(egui::Image::new(uri.clone()).max_size(vec2(240.0, 180.0)));
                     }
                     None => {
                         let (rect, _) = ui.allocate_exact_size(vec2(240.0, 170.0), egui::Sense::hover());
@@ -491,7 +491,7 @@ impl App {
                         ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing.y = 0.0;
                             let font = FontId::new(38.0, theme::display());
-                            if art.is_none() && !brand.is_empty() {
+                            if !art_has_brand && !brand.is_empty() {
                                 ui.label(RichText::new(&brand).font(font.clone()).color(t.accent));
                             }
                             ui.label(RichText::new(&release).font(font).color(t.ink_strong));

@@ -6,7 +6,7 @@
 pub const NAME: &str = "YAiST";
 
 /// The wordmark, piece by piece: (text, in the accent colour).
-pub const WORDMARK: [(&str, bool); 3] = [("Y", false), ("Ai", true), ("ST", false)];
+pub const WORDMARK: [(&str, bool); 3] = [("YA", false), ("i", true), ("ST", false)];
 
 pub mod palette;
 mod session;

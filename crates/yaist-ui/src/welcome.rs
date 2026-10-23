@@ -20,11 +20,19 @@ pub fn distribution_logo(file: &str) -> Option<String> {
     path.is_file().then(|| format!("file://{}", path.display()))
 }
 
-/// Artwork for the welcome screen instead of the drawn chameleon:
-/// `$YAIST_WELCOME_ART` (an SVG or PNG), as a `file://` URI.
-pub fn welcome_art() -> Option<String> {
-    let path = std::path::PathBuf::from(std::env::var_os("YAIST_WELCOME_ART")?);
-    path.is_file().then(|| format!("file://{}", path.display()))
+/// Artwork for the welcome screen, as a `file://` URI and whether it carries
+/// the openSUSE wordmark itself (then the title shows only the release):
+/// `$YAIST_WELCOME_ART`, else the pirate Geeko from openSUSE-welcome
+/// (installed in /usr/share/yaist/art, or in the repository next to a
+/// development build). It is a separate GPL-3.0-or-later file, loaded at run
+/// time and never compiled in. None: the drawn chameleon.
+pub fn welcome_art() -> Option<(String, bool)> {
+    let uri = |p: &std::path::Path| format!("file://{}", p.display());
+    if let Some(custom) = std::env::var_os("YAIST_WELCOME_ART").map(std::path::PathBuf::from).filter(|p| p.is_file()) {
+        return Some((uri(&custom), true));
+    }
+    let dev = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.parent()?.parent()?.join("assets/art/sinking.svg")));
+    [Some(std::path::PathBuf::from("/usr/share/yaist/art/sinking.svg")), dev].into_iter().flatten().find(|p| p.is_file()).map(|p| (uri(&p), false))
 }
 
 /// Whether the system still gets updates, shown next to the mode tag.

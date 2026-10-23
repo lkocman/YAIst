@@ -23,7 +23,15 @@ what ends up in the binaries, and what is only downloaded at runtime.
 | everything not listed below | Apache-2.0 | YAiST's own work |
 | `apps/yaist-gui/src/theme.rs`, `widgets.rs` | Apache-2.0 | adapted from the ArtCraft launcher (MIT OR Apache-2.0, used under Apache-2.0); both copyright holders in `REUSE.toml` |
 | `assets/fonts/*.ttf` | OFL-1.1 | Inter, Archivo, Geist Mono; texts in `assets/fonts/OFL-*.txt` |
+| `assets/art/sinking.svg` | **GPL-3.0-or-later** | the welcome screen's pirate Geeko, from openSUSE-welcome; a separate data file loaded at run time (installed to `/usr/share/yaist/art/`), never compiled into the binaries |
 | `assets/icons/` | Apache-2.0 | the YAiST icon, generated with ChatGPT by Lubos Kocman (OpenAI's terms assign the output to the user; purely AI-generated images may not be copyrightable, whatever rights exist are under Apache-2.0) |
+
+**Package impact of the welcome artwork:** the binaries stay Apache-2.0 (plus
+their crates), but a package that ships `assets/art/sinking.svg` contains a
+GPL-3.0-or-later file: add `GPL-3.0-or-later` to that package's `License:` or
+ship the artwork in its own subpackage. Without the file, the welcome screen
+falls back to the chameleon drawn in code. A permissive grant from the
+openSUSE-welcome artwork authors would remove this.
 
 No ArtCraft trademarks (name, logo, icons) are used. The look borrows only the
 layout and widget style, in the openSUSE colour palette.
