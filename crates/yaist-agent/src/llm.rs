@@ -50,7 +50,8 @@ impl LlmClient {
 
     /// The name of the loaded model; doubles as a health check.
     pub async fn model_name(&self) -> Result<String> {
-        let v: Value = self.http.get(format!("{}/v1/models", self.config.url)).timeout(Duration::from_secs(3)).send().await?.error_for_status()?.json().await?;
+        let v: Value =
+            self.http.get(format!("{}/v1/models", self.config.url)).timeout(Duration::from_secs(3)).send().await?.error_for_status()?.json().await?;
         let id = v["data"][0]["id"].as_str().unwrap_or("unknown model");
         // "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M" -> "Qwen3-4B-Instruct-2507"
         let name = id.rsplit('/').next().unwrap_or(id);
@@ -74,7 +75,8 @@ impl LlmClient {
             // (system prompt + tool schemas), the main latency win.
             "cache_prompt": true,
         });
-        let resp = self.http.post(format!("{}/v1/chat/completions", self.config.url)).json(&body).send().await.context("contacting the local model")?;
+        let resp =
+            self.http.post(format!("{}/v1/chat/completions", self.config.url)).json(&body).send().await.context("contacting the local model")?;
         let status = resp.status();
         let v: Value = resp.json().await.context("reading the model's reply")?;
         if !status.is_success() {

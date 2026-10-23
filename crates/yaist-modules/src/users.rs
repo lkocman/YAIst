@@ -39,7 +39,10 @@ const DELETE: ActionSpec = ActionSpec {
     title: "Delete user",
     description: "Delete a local user account, optionally with its home directory.",
     risk: Risk::Dangerous,
-    params: &[Param::text("username", "Login name").check(validate::username), Param::boolean("remove_home", "Also delete the home directory and mail spool")],
+    params: &[
+        Param::text("username", "Login name").check(validate::username),
+        Param::boolean("remove_home", "Also delete the home directory and mail spool"),
+    ],
 };
 
 pub fn register(reg: &mut Registry) {
@@ -135,7 +138,8 @@ fn group_members(group: &str) -> Vec<String> {
 
 fn list() -> Result<Output> {
     let admins = group_members(ADMIN_GROUP);
-    let mut t = Table::new(&[("username", "User"), ("full_name", "Name"), ("uid", "UID"), ("is_admin", "Admin"), ("shell", "Shell"), ("home", "Home")]);
+    let mut t =
+        Table::new(&[("username", "User"), ("full_name", "Name"), ("uid", "UID"), ("is_admin", "Admin"), ("shell", "Shell"), ("home", "Home")]);
     for u in passwd().into_iter().filter(|u| (1000..60000).contains(&u.uid)) {
         let admin = if admins.contains(&u.name) { "yes" } else { "no" };
         t.push(vec![u.name, u.gecos, u.uid.to_string(), admin.into(), u.shell, u.home]);

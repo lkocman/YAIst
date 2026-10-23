@@ -49,10 +49,19 @@ pub enum Entry {
     /// A command the user ran, typed or via a panel.
     Command(String),
     /// A read action the agent ran on its own.
-    AgentRan { command: String, ok: bool },
-    Assistant { text: String, elapsed: Duration },
+    AgentRan {
+        command: String,
+        ok: bool,
+    },
+    Assistant {
+        text: String,
+        elapsed: Duration,
+    },
     Plan(Plan),
-    Result { title: String, output: Output },
+    Result {
+        title: String,
+        output: Output,
+    },
     Error(String),
     Notice(String),
 }

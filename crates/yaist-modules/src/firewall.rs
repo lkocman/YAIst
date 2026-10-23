@@ -65,7 +65,13 @@ const REMOVE: ActionSpec = ActionSpec {
 };
 
 pub fn register(reg: &mut Registry) {
-    reg.module(ModuleSpec { id: "firewall", title: "Firewall", tagline: "Ports, services and zones", overview: OVERVIEW.id, row_actions: &[REMOVE.id] });
+    reg.module(ModuleSpec {
+        id: "firewall",
+        title: "Firewall",
+        tagline: "Ports, services and zones",
+        overview: OVERVIEW.id,
+        row_actions: &[REMOVE.id],
+    });
 
     reg.action(OVERVIEW, |ctx, _| async move { overview(&ctx).await });
 

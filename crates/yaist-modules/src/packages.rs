@@ -10,7 +10,7 @@ use crate::zypper;
 const PACKAGES_PARAM: Param = Param::text("packages", "Package names, space separated").check(validate::packages);
 
 const UPDATES: ActionSpec = ActionSpec {
-    id: "packages.updates",
+    id: "packages.list_updates",
     title: "Available updates",
     description: "List packages with updates available, from the cached repository metadata.",
     risk: Risk::Read,
@@ -74,7 +74,13 @@ const REFRESH: ActionSpec = ActionSpec {
 };
 
 pub fn register(reg: &mut Registry) {
-    reg.module(ModuleSpec { id: "packages", title: "Packages", tagline: "Install, remove and update", overview: UPDATES.id, row_actions: &[UPDATE.id, INFO.id] });
+    reg.module(ModuleSpec {
+        id: "packages",
+        title: "Packages",
+        tagline: "Install, remove and update",
+        overview: UPDATES.id,
+        row_actions: &[UPDATE.id, INFO.id],
+    });
 
     reg.action(UPDATES, |ctx, _| async move { updates(&ctx).await });
     reg.action(SEARCH, |ctx, args| async move { search(&ctx, args.str("query")).await });
@@ -99,7 +105,11 @@ pub fn register(reg: &mut Registry) {
     reg.action(UPDATE_SYSTEM, |ctx, _| async move {
         let d = &ctx.distro;
         let verb = if d.rolling { "dup" } else { "update" };
-        let out = if d.transactional { zypper::transactional(&ctx, &[if d.rolling { "dup" } else { "up" }]).await? } else { zypper::change(&ctx, &[verb]).await? };
+        let out = if d.transactional {
+            zypper::transactional(&ctx, &[if d.rolling { "dup" } else { "up" }]).await?
+        } else {
+            zypper::change(&ctx, &[verb]).await?
+        };
         Ok(Output::Done(format!("System updated ({verb}). {out}")))
     });
 

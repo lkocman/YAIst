@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    # yAIst targets every openSUSE, so build and test on the oldest and the
+    # newest toolchain we support, with the distribution's own Rust.
+    name: Build and test (${{ matrix.distro }})
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: leap-16.0
+            image: registry.opensuse.org/opensuse/leap:16.0
+          - distro: tumbleweed
+            image: registry.opensuse.org/opensuse/tumbleweed:latest
+    steps:
+      - name: Install toolchain
+        run: zypper -n --gpg-auto-import-keys install --no-recommends cargo rust gcc git tar gzip zstd python3
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ matrix.distro }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ matrix.distro }}-cargo-
+      - name: Formatting
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Tests
+        run: cargo test --workspace --locked
+      - name: GUI without bundled fonts
+        run: cargo check -p yaist-gui --no-default-features --locked
+      - name: Licence report
+        if: matrix.distro == 'tumbleweed'
+        run: scripts/license-report.sh
+
+  licenses:
+    name: Crate licences and sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses sources bans
+
+  advisories:
+    # New RustSec advisories appear independently of any change here, so this
+    # reports without blocking unrelated pull requests.
+    name: Security advisories
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+
+  reuse:
+    name: REUSE compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fsfe/reuse-action@v5

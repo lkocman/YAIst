@@ -19,7 +19,10 @@ pub enum Cmd {
     /// A line from the input prompt: a `/command` or plain language.
     Submit(String),
     /// A panel button or form: run (reads) or propose (changes) an action.
-    Propose { action: &'static str, raw: Map<String, Value> },
+    Propose {
+        action: &'static str,
+        raw: Map<String, Value>,
+    },
     Confirm(u64),
     Cancel(u64),
     /// Reload a module's panel.
@@ -122,11 +125,11 @@ impl Session {
             })
             .collect();
         let distro_name = if ctx.distro.pretty.is_empty() { "this system".to_owned() } else { ctx.distro.pretty.clone() };
-        let mut conversation = vec![Entry::Notice(format!(
-            "yAIst on {distro_name}. Ask in plain language, type /help for commands, or work in the panels."
-        ))];
+        let mut conversation =
+            vec![Entry::Notice(format!("yAIst on {distro_name}. Ask in plain language, type /help for commands, or work in the panels."))];
         if !ctx.distro.is_opensuse() {
-            conversation.push(Entry::Error(format!("This doesn't look like openSUSE ({}); package and repository modules may not work.", ctx.distro.id)));
+            conversation
+                .push(Entry::Error(format!("This doesn't look like openSUSE ({}); package and repository modules may not work.", ctx.distro.id)));
         }
         let state = Arc::new(Mutex::new(State {
             distro: ctx.distro.clone(),

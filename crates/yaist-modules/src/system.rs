@@ -65,8 +65,10 @@ pub fn register(reg: &mut Registry) {
 }
 
 async fn overview(ctx: &Context) -> anyhow::Result<Output> {
-    let host: String = ctx.property(HOSTNAME1, HOSTNAME1_PATH, HOSTNAME1, "Hostname").await.unwrap_or_else(|_| read_trim("/proc/sys/kernel/hostname"));
-    let kernel: String = ctx.property(HOSTNAME1, HOSTNAME1_PATH, HOSTNAME1, "KernelRelease").await.unwrap_or_else(|_| read_trim("/proc/sys/kernel/osrelease"));
+    let host: String =
+        ctx.property(HOSTNAME1, HOSTNAME1_PATH, HOSTNAME1, "Hostname").await.unwrap_or_else(|_| read_trim("/proc/sys/kernel/hostname"));
+    let kernel: String =
+        ctx.property(HOSTNAME1, HOSTNAME1_PATH, HOSTNAME1, "KernelRelease").await.unwrap_or_else(|_| read_trim("/proc/sys/kernel/osrelease"));
     let tz: String = ctx.property(TIMEDATE1, TIMEDATE1_PATH, TIMEDATE1, "Timezone").await.unwrap_or_default();
     let ntp: bool = ctx.property(TIMEDATE1, TIMEDATE1_PATH, TIMEDATE1, "NTP").await.unwrap_or(false);
     let synced: bool = ctx.property(TIMEDATE1, TIMEDATE1_PATH, TIMEDATE1, "NTPSynchronized").await.unwrap_or(false);
@@ -99,7 +101,11 @@ fn read_trim(path: &str) -> String {
 fn uptime() -> String {
     let secs = read_trim("/proc/uptime").split('.').next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
     let (d, h, m) = (secs / 86400, secs % 86400 / 3600, secs % 3600 / 60);
-    if d > 0 { format!("{d} d {h} h {m} min") } else { format!("{h} h {m} min") }
+    if d > 0 {
+        format!("{d} d {h} h {m} min")
+    } else {
+        format!("{h} h {m} min")
+    }
 }
 
 fn memory() -> String {

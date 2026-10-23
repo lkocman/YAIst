@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use egui::{Color32, CornerRadius, FontId, Frame, Margin, RichText, Stroke, Ui, vec2};
+use egui::{vec2, Color32, CornerRadius, FontId, Frame, Margin, RichText, Stroke, Ui};
 use serde_json::{Map, Value};
 use yaist_core::{Output, ParamKind, Risk, Table};
 use yaist_ui::{row_action_is_direct, row_args, tone_of, Cmd, Entry, Form, LlmStatus, ModuleView, Panel, Plan, PlanStatus, Session};
@@ -248,8 +248,20 @@ impl App {
             let tag = egui::Rect::from_min_size(rect.min + vec2(22.0, 14.0), galley.size() + vec2(14.0, 8.0));
             p.rect_filled(tag, CornerRadius::ZERO, t.module(i));
             p.galley_with_override_text_color(tag.center() - galley.size() / 2.0, galley, t.invert_fg);
-            p.text(egui::pos2(tag.right() + 12.0, tag.center().y), egui::Align2::LEFT_CENTER, m.spec.title, FontId::new(15.0, theme::semibold()), if selected { t.ink_strong } else { t.ink });
-            p.text(egui::pos2(rect.left() + 22.0, rect.top() + 47.0), egui::Align2::LEFT_CENTER, m.spec.tagline, FontId::new(12.0, egui::FontFamily::Proportional), t.muted);
+            p.text(
+                egui::pos2(tag.right() + 12.0, tag.center().y),
+                egui::Align2::LEFT_CENTER,
+                m.spec.title,
+                FontId::new(15.0, theme::semibold()),
+                if selected { t.ink_strong } else { t.ink },
+            );
+            p.text(
+                egui::pos2(rect.left() + 22.0, rect.top() + 47.0),
+                egui::Align2::LEFT_CENTER,
+                m.spec.tagline,
+                FontId::new(12.0, egui::FontFamily::Proportional),
+                t.muted,
+            );
             if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                 self.acts.push(Act::Select(i));
             }
@@ -320,7 +332,8 @@ impl App {
     fn table(&mut self, ui: &mut Ui, m: &ModuleView, table: &Table) {
         let t = Tokens::get(ui.ctx());
         let visible_actions = m.row_actions.len().min(2);
-        let actions_w = if m.row_actions.is_empty() { 0.0 } else { visible_actions as f32 * 90.0 + if m.row_actions.len() > 2 { 40.0 } else { 0.0 } + 8.0 };
+        let actions_w =
+            if m.row_actions.is_empty() { 0.0 } else { visible_actions as f32 * 90.0 + if m.row_actions.len() > 2 { 40.0 } else { 0.0 } + 8.0 };
         let full_w = ui.available_width();
         let cols_w = full_w - actions_w - 28.0;
         // Badge columns get room for their longest label; the other columns
@@ -367,7 +380,8 @@ impl App {
                     if yaist_ui::is_status_column(table.columns[c].key) && !value.is_empty() {
                         widgets::badge(&mut cu, value, t.tone(tone_of(value)));
                     } else {
-                        let text = if c == 0 { RichText::new(value).family(theme::medium()).color(t.ink_strong) } else { RichText::new(value).color(t.ink) };
+                        let text =
+                            if c == 0 { RichText::new(value).family(theme::medium()).color(t.ink_strong) } else { RichText::new(value).color(t.ink) };
                         cu.add(egui::Label::new(text).truncate());
                     }
                 }
@@ -458,7 +472,9 @@ impl App {
                 let (send_w, h) = (84.0, theme::CONTROL_H + 6.0);
                 let (field, _) = ui.allocate_exact_size(vec2(ui.available_width() - send_w - 8.0, h), egui::Sense::hover());
                 ui.painter().rect(field, CornerRadius::ZERO, t.sunken, Stroke::new(1.0, t.line_strong), egui::StrokeKind::Inside);
-                let mut fu = ui.new_child(egui::UiBuilder::new().max_rect(field.shrink2(vec2(12.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                let mut fu = ui.new_child(
+                    egui::UiBuilder::new().max_rect(field.shrink2(vec2(12.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)),
+                );
                 let edit = fu.add(
                     egui::TextEdit::singleline(&mut self.input)
                         .hint_text(RichText::new("Ask yAIst, or type /help").color(t.faint))

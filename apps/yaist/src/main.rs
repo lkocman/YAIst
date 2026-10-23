@@ -63,7 +63,8 @@ fn cli_run(args: &[String]) -> Result<()> {
             let widths: Vec<usize> = (0..t.columns.len())
                 .map(|i| t.rows.iter().map(|r| r[i].chars().count()).chain([t.columns[i].title.len()]).max().unwrap_or(0).min(40))
                 .collect();
-            let fmt = |cells: Vec<&str>| cells.iter().zip(&widths).map(|(c, w)| format!("{:<w$}", truncate(c, *w), w = *w)).collect::<Vec<_>>().join("  ");
+            let fmt =
+                |cells: Vec<&str>| cells.iter().zip(&widths).map(|(c, w)| format!("{:<w$}", truncate(c, *w), w = *w)).collect::<Vec<_>>().join("  ");
             println!("{}", fmt(t.columns.iter().map(|c| c.title).collect()));
             for r in &t.rows {
                 println!("{}", fmt(r.iter().map(String::as_str).collect()));
@@ -119,7 +120,11 @@ fn cli_ask(question: &str) -> Result<()> {
 }
 
 fn truncate(s: &str, w: usize) -> String {
-    if s.chars().count() <= w { s.to_owned() } else { s.chars().take(w.saturating_sub(1)).chain(['…']).collect() }
+    if s.chars().count() <= w {
+        s.to_owned()
+    } else {
+        s.chars().take(w.saturating_sub(1)).chain(['…']).collect()
+    }
 }
 
 fn reset_sigpipe() {

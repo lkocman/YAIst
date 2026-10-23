@@ -31,12 +31,8 @@ pub struct Distro {
 impl Distro {
     pub fn detect() -> Self {
         let text = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
-        let field = |key: &str| {
-            text.lines()
-                .find_map(|l| l.strip_prefix(key)?.strip_prefix('='))
-                .map(|v| v.trim_matches('"').to_owned())
-                .unwrap_or_default()
-        };
+        let field =
+            |key: &str| text.lines().find_map(|l| l.strip_prefix(key)?.strip_prefix('=')).map(|v| v.trim_matches('"').to_owned()).unwrap_or_default();
         let id = field("ID");
         let rolling = ["tumbleweed", "slowroll", "microos", "aeon", "kalpa"].iter().any(|r| id.contains(r));
         let transactional = Path::new("/usr/sbin/transactional-update").exists() && root_is_read_only();
@@ -100,7 +96,15 @@ impl Context {
 
     /// Calls a D-Bus method. `interactive` lets the service ask polkit to
     /// authenticate the user (the desktop's polkit agent shows the dialog).
-    pub async fn call<B, R>(&self, dest: &'static str, path: &str, iface: &'static str, method: &'static str, body: &B, interactive: bool) -> Result<R>
+    pub async fn call<B, R>(
+        &self,
+        dest: &'static str,
+        path: &str,
+        iface: &'static str,
+        method: &'static str,
+        body: &B,
+        interactive: bool,
+    ) -> Result<R>
     where
         B: Serialize + DynamicType,
         R: for<'d> DynamicDeserialize<'d>,
@@ -117,7 +121,7 @@ impl Context {
         T::Error: Into<zbus::Error>,
     {
         let proxy = self.proxy(dest, path, iface).await?;
-        proxy.get_property::<T>(name).await.map_err(|e| dbus_error(e.into()))
+        proxy.get_property::<T>(name).await.map_err(dbus_error)
     }
 
     /// Runs a command as the user. Output is forced to the C locale so it can

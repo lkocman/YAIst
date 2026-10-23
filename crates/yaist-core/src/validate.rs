@@ -36,7 +36,11 @@ pub fn port(s: &str) -> R {
         Some((a, b)) => ok(a) && ok(b),
         None => ok(s),
     };
-    if valid { Ok(()) } else { Err("expected a port 1-65535 or a range like 60000-61000".into()) }
+    if valid {
+        Ok(())
+    } else {
+        Err("expected a port 1-65535 or a range like 60000-61000".into())
+    }
 }
 
 /// A firewall rule as shown in the panel: `8080/tcp` or a service name.

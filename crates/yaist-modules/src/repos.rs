@@ -37,9 +37,17 @@ const ADD_OBS: ActionSpec = ActionSpec {
     ],
 };
 
-const ENABLE: ActionSpec = ActionSpec { id: "repos.enable", title: "Enable", description: "Enable a repository.", risk: Risk::Change, params: &[ALIAS_PARAM] };
-const DISABLE: ActionSpec = ActionSpec { id: "repos.disable", title: "Disable", description: "Disable a repository without removing it.", risk: Risk::Change, params: &[ALIAS_PARAM] };
-const REMOVE: ActionSpec = ActionSpec { id: "repos.remove", title: "Remove", description: "Remove a repository.", risk: Risk::Dangerous, params: &[ALIAS_PARAM] };
+const ENABLE: ActionSpec =
+    ActionSpec { id: "repos.enable", title: "Enable", description: "Enable a repository.", risk: Risk::Change, params: &[ALIAS_PARAM] };
+const DISABLE: ActionSpec = ActionSpec {
+    id: "repos.disable",
+    title: "Disable",
+    description: "Disable a repository without removing it.",
+    risk: Risk::Change,
+    params: &[ALIAS_PARAM],
+};
+const REMOVE: ActionSpec =
+    ActionSpec { id: "repos.remove", title: "Remove", description: "Remove a repository.", risk: Risk::Dangerous, params: &[ALIAS_PARAM] };
 
 pub fn register(reg: &mut Registry) {
     reg.module(ModuleSpec {

@@ -116,17 +116,17 @@ impl App {
         Self {
             session,
             t: Tokens::dark(),
-        focus: Focus::Input,
-        input: String::new(),
-        cursor: 0,
-        history: Vec::new(),
-        history_pos: None,
-        table: TableState::default().with_selected(Some(0)),
-        scroll_up: 0,
-        menu: None,
-        form: None,
-        form_field: 0,
-        plan_choice: 0,
+            focus: Focus::Input,
+            input: String::new(),
+            cursor: 0,
+            history: Vec::new(),
+            history_pos: None,
+            table: TableState::default().with_selected(Some(0)),
+            scroll_up: 0,
+            menu: None,
+            form: None,
+            form_field: 0,
+            plan_choice: 0,
             started: Instant::now(),
             quit: false,
         }
@@ -534,7 +534,10 @@ impl App {
 
         let mut spans = vec![Span::raw(" ")];
         for a in &m.actions {
-            spans.push(Span::styled(format!(" {} ", a.title.to_uppercase()), Style::new().fg(c(t.invert_fg)).bg(c(t.invert_bg)).add_modifier(Modifier::BOLD)));
+            spans.push(Span::styled(
+                format!(" {} ", a.title.to_uppercase()),
+                Style::new().fg(c(t.invert_fg)).bg(c(t.invert_bg)).add_modifier(Modifier::BOLD),
+            ));
             spans.push(Span::raw("  "));
         }
         if !m.actions.is_empty() {
@@ -619,7 +622,12 @@ impl App {
 
         if let Some(plan) = s.pending_plan() {
             let labels = [("y", "confirm"), ("e", "edit"), ("n", "cancel")];
-            let mut spans = vec![self.badge(plan.spec.risk.label(), t.risk(plan.spec.risk)), Span::raw(" "), Span::styled(plan.spec.title.to_owned(), self.style(t.ink_strong).add_modifier(Modifier::BOLD)), Span::raw("   ")];
+            let mut spans = vec![
+                self.badge(plan.spec.risk.label(), t.risk(plan.spec.risk)),
+                Span::raw(" "),
+                Span::styled(plan.spec.title.to_owned(), self.style(t.ink_strong).add_modifier(Modifier::BOLD)),
+                Span::raw("   "),
+            ];
             for (i, (key, l)) in labels.iter().enumerate() {
                 let style = if i == self.plan_choice {
                     let fill = if i == 0 && plan.spec.risk == Risk::Dangerous { t.bad } else { t.invert_bg };
@@ -638,10 +646,8 @@ impl App {
         }
 
         let focused = self.focus == Focus::Input;
-        let block = Block::new()
-            .borders(Borders::TOP)
-            .border_style(self.style(if focused { t.line_strong } else { t.line }))
-            .style(self.style(t.ink));
+        let block =
+            Block::new().borders(Borders::TOP).border_style(self.style(if focused { t.line_strong } else { t.line })).style(self.style(t.ink));
         let inner = block.inner(input_area);
         f.render_widget(block, input_area);
         let prompt = Span::styled(" › ", self.style(if focused { t.accent } else { t.faint }).add_modifier(Modifier::BOLD));
@@ -668,7 +674,10 @@ impl App {
                 out.push(Line::from(vec![self.hud(" you", t.muted)]));
                 text(out, s, t.ink_strong, 1);
             }
-            Entry::Command(s) => out.push(Line::from(vec![Span::styled(" › ", self.style(t.faint)), Span::styled(s.clone(), self.style(t.ink_strong).add_modifier(Modifier::BOLD))])),
+            Entry::Command(s) => out.push(Line::from(vec![
+                Span::styled(" › ", self.style(t.faint)),
+                Span::styled(s.clone(), self.style(t.ink_strong).add_modifier(Modifier::BOLD)),
+            ])),
             Entry::AgentRan { command, ok } => out.push(Line::from(vec![
                 Span::styled(if *ok { "   ✓ ran " } else { "   ✗ ran " }, self.style(if *ok { t.faint } else { t.bad })),
                 Span::styled(command.clone(), self.style(t.faint)),
@@ -684,21 +693,42 @@ impl App {
             }
             Entry::Plan(p) => {
                 let risk = t.risk(p.spec.risk);
-                out.push(Line::from(vec![Span::raw(" "), self.tag("plan", risk), Span::raw(" "), self.badge(p.spec.risk.label(), risk), Span::styled(format!("  {}", p.spec.title), self.style(t.ink_strong).add_modifier(Modifier::BOLD))]));
+                out.push(Line::from(vec![
+                    Span::raw(" "),
+                    self.tag("plan", risk),
+                    Span::raw(" "),
+                    self.badge(p.spec.risk.label(), risk),
+                    Span::styled(format!("  {}", p.spec.title), self.style(t.ink_strong).add_modifier(Modifier::BOLD)),
+                ]));
                 out.push(Line::from(vec![Span::styled(" │ ", self.style(risk)), Span::styled(p.command.clone(), self.style(t.ink))]));
                 for param in p.spec.params {
                     let v = p.args.display(param.name);
                     let v = if v.is_empty() { "(default)".to_owned() } else { v };
-                    out.push(Line::from(vec![Span::styled(" │ ", self.style(risk)), Span::styled(format!("{:<12}", param.name), self.style(t.faint)), Span::styled(v, self.style(t.ink))]));
+                    out.push(Line::from(vec![
+                        Span::styled(" │ ", self.style(risk)),
+                        Span::styled(format!("{:<12}", param.name), self.style(t.faint)),
+                        Span::styled(v, self.style(t.ink)),
+                    ]));
                 }
                 for l in wrap(p.spec.description, width.saturating_sub(3)) {
                     out.push(Line::from(vec![Span::styled(" │ ", self.style(risk)), Span::styled(l, self.style(t.muted))]));
                 }
                 let status = match &p.status {
-                    PlanStatus::Pending => Line::from(vec![Span::styled(" └ ", self.style(risk)), self.hud("waiting for you: [y] confirm  [e] edit  [n] cancel", t.warn)]),
+                    PlanStatus::Pending => Line::from(vec![
+                        Span::styled(" └ ", self.style(risk)),
+                        self.hud("waiting for you: [y] confirm  [e] edit  [n] cancel", t.warn),
+                    ]),
                     PlanStatus::Running => Line::from(vec![Span::styled(" └ ", self.style(risk)), self.hud("running…", t.muted)]),
-                    PlanStatus::Done(m) => Line::from(vec![Span::styled(" └ ", self.style(t.good)), self.badge("done", t.good), Span::styled(format!(" {m}"), self.style(t.ink))]),
-                    PlanStatus::Failed(m) => Line::from(vec![Span::styled(" └ ", self.style(t.bad)), self.badge("failed", t.bad), Span::styled(format!(" {m}"), self.style(t.bad))]),
+                    PlanStatus::Done(m) => Line::from(vec![
+                        Span::styled(" └ ", self.style(t.good)),
+                        self.badge("done", t.good),
+                        Span::styled(format!(" {m}"), self.style(t.ink)),
+                    ]),
+                    PlanStatus::Failed(m) => Line::from(vec![
+                        Span::styled(" └ ", self.style(t.bad)),
+                        self.badge("failed", t.bad),
+                        Span::styled(format!(" {m}"), self.style(t.bad)),
+                    ]),
                     PlanStatus::Cancelled => Line::from(vec![Span::styled(" └ ", self.style(t.faint)), self.badge("cancelled", t.faint)]),
                 };
                 out.push(status);
@@ -708,10 +738,25 @@ impl App {
                 match output {
                     Output::Table(table) => {
                         let widths: Vec<usize> = (0..table.columns.len())
-                            .map(|i| table.rows.iter().take(15).map(|r| r[i].chars().count()).chain([table.columns[i].title.len()]).max().unwrap_or(0).min(28))
+                            .map(|i| {
+                                table
+                                    .rows
+                                    .iter()
+                                    .take(15)
+                                    .map(|r| r[i].chars().count())
+                                    .chain([table.columns[i].title.len()])
+                                    .max()
+                                    .unwrap_or(0)
+                                    .min(28)
+                            })
                             .collect();
-                        let fmt = |cells: Vec<String>| cells.iter().zip(&widths).map(|(c, w)| format!("{:<w$}", clip(c, *w), w = *w)).collect::<Vec<_>>().join("  ");
-                        out.push(Line::from(Span::styled(clip(&format!(" {}", fmt(table.columns.iter().map(|c| c.title.to_uppercase()).collect())), width), self.style(t.faint))));
+                        let fmt = |cells: Vec<String>| {
+                            cells.iter().zip(&widths).map(|(c, w)| format!("{:<w$}", clip(c, *w), w = *w)).collect::<Vec<_>>().join("  ")
+                        };
+                        out.push(Line::from(Span::styled(
+                            clip(&format!(" {}", fmt(table.columns.iter().map(|c| c.title.to_uppercase()).collect())), width),
+                            self.style(t.faint),
+                        )));
                         for r in table.rows.iter().take(15) {
                             out.push(Line::from(Span::styled(clip(&format!(" {}", fmt(r.clone())), width), self.style(t.ink))));
                         }
@@ -726,7 +771,10 @@ impl App {
                         for (k, v) in facts {
                             for (i, part) in v.lines().enumerate() {
                                 let key = if i == 0 { format!(" {:<16}", k) } else { " ".repeat(17) };
-                                out.push(Line::from(vec![Span::styled(key, self.style(t.faint)), Span::styled(clip(part, width.saturating_sub(17)), self.style(t.ink))]));
+                                out.push(Line::from(vec![
+                                    Span::styled(key, self.style(t.faint)),
+                                    Span::styled(clip(part, width.saturating_sub(17)), self.style(t.ink)),
+                                ]));
                             }
                         }
                     }
@@ -779,7 +827,11 @@ impl App {
             .map(|(i, a)| {
                 let sel = i == menu.selected;
                 let st = if sel { Style::new().fg(c(t.invert_fg)).bg(c(t.invert_bg)).add_modifier(Modifier::BOLD) } else { self.style(t.ink) };
-                Line::from(vec![Span::styled(format!(" {:<28}", a.title.to_uppercase()), st), Span::raw(" "), self.badge(a.risk.label(), t.risk(a.risk))])
+                Line::from(vec![
+                    Span::styled(format!(" {:<28}", a.title.to_uppercase()), st),
+                    Span::raw(" "),
+                    self.badge(a.risk.label(), t.risk(a.risk)),
+                ])
             })
             .collect();
         f.render_widget(Paragraph::new(lines), Rect { y: inner.y + 1, height: inner.height.saturating_sub(1), ..inner });
@@ -789,16 +841,29 @@ impl App {
         let t = &self.t;
         let rect = self.popup(area, 72, form.spec.params.len() as u16 * 3 + 7);
         f.render_widget(Clear, rect);
-        let block = self.block(true).title(Line::from(vec![Span::raw(" "), self.hud(form.spec.title, t.ink_strong), Span::raw(" "), self.badge(form.spec.risk.label(), t.risk(form.spec.risk)), Span::raw(" ")]));
+        let block = self.block(true).title(Line::from(vec![
+            Span::raw(" "),
+            self.hud(form.spec.title, t.ink_strong),
+            Span::raw(" "),
+            self.badge(form.spec.risk.label(), t.risk(form.spec.risk)),
+            Span::raw(" "),
+        ]));
         let inner = block.inner(rect);
         f.render_widget(block, rect);
-        let mut lines = vec![Line::from(Span::styled(clip(&format!(" {}", form.spec.description), inner.width as usize), self.style(t.muted))), Line::from("")];
+        let mut lines =
+            vec![Line::from(Span::styled(clip(&format!(" {}", form.spec.description), inner.width as usize), self.style(t.muted))), Line::from("")];
         for (i, (p, v)) in form.spec.params.iter().zip(&form.values).enumerate() {
             let sel = i == self.form_field;
             let label = format!(" {}{}", p.name.replace('_', " "), if p.required { "" } else { " (optional)" });
             lines.push(Line::from(self.hud(&label, if sel { t.accent } else { t.faint })));
             let value = match p.kind {
-                ParamKind::Bool => if v == "true" { "[x] yes".to_owned() } else { "[ ] no".to_owned() },
+                ParamKind::Bool => {
+                    if v == "true" {
+                        "[x] yes".to_owned()
+                    } else {
+                        "[ ] no".to_owned()
+                    }
+                }
                 ParamKind::Choice(_) => format!("‹ {v} ›"),
                 _ => format!("{v}{}", if sel { "▏" } else { "" }),
             };
@@ -811,7 +876,11 @@ impl App {
 }
 
 fn clip(s: &str, w: usize) -> String {
-    if s.chars().count() <= w { s.to_owned() } else { s.chars().take(w.saturating_sub(1)).chain(['…']).collect() }
+    if s.chars().count() <= w {
+        s.to_owned()
+    } else {
+        s.chars().take(w.saturating_sub(1)).chain(['…']).collect()
+    }
 }
 
 /// Word-wraps `s` to `width` columns, keeping its line breaks.

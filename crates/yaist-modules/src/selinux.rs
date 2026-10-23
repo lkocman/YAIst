@@ -25,7 +25,8 @@ const STATUS: ActionSpec = ActionSpec {
 const DENIALS: ActionSpec = ActionSpec {
     id: "selinux.denials",
     title: "Recent denials",
-    description: "Show recent SELinux AVC denials from the audit log. Use this when something fails with 'permission denied' and SELinux may be the cause.",
+    description:
+        "Show recent SELinux AVC denials from the audit log. Use this when something fails with 'permission denied' and SELinux may be the cause.",
     risk: Risk::Read,
     params: &[Param::integer("limit", "How many denials to show").default("10")],
 };
@@ -51,7 +52,13 @@ const SET_MODE: ActionSpec = ActionSpec {
 };
 
 pub fn register(reg: &mut Registry) {
-    reg.module(ModuleSpec { id: "selinux", title: "SELinux", tagline: "Mode, booleans and denials", overview: BOOLEANS.id, row_actions: &[SET_BOOLEAN.id] });
+    reg.module(ModuleSpec {
+        id: "selinux",
+        title: "SELinux",
+        tagline: "Mode, booleans and denials",
+        overview: BOOLEANS.id,
+        row_actions: &[SET_BOOLEAN.id],
+    });
 
     reg.action(BOOLEANS, |_, args| async move { booleans(args.opt_str("filter")) });
     reg.action(STATUS, |_, _| async move { Ok(status()) });
@@ -116,7 +123,11 @@ pub fn lsm_summary() -> String {
         return format!("SELinux {}", current_mode());
     }
     let lsm = std::fs::read_to_string("/sys/kernel/security/lsm").unwrap_or_default();
-    if lsm.contains("apparmor") { "AppArmor".into() } else { "none".into() }
+    if lsm.contains("apparmor") {
+        "AppArmor".into()
+    } else {
+        "none".into()
+    }
 }
 
 fn status() -> Output {
@@ -148,7 +159,8 @@ fn booleans(filter: Option<&str>) -> Result<Output> {
 
 async fn denials(ctx: &Context, limit: usize) -> Result<Output> {
     require_enabled()?;
-    let text = ctx.run(&["journalctl", "_TRANSPORT=audit", "--lines", "2000", "--no-pager", "--output", "short-iso", "--quiet"]).await.unwrap_or_default();
+    let text =
+        ctx.run(&["journalctl", "_TRANSPORT=audit", "--lines", "2000", "--no-pager", "--output", "short-iso", "--quiet"]).await.unwrap_or_default();
     let found: Vec<&str> = text.lines().filter(|l| l.contains("avc:") && l.contains("denied")).collect();
     if found.is_empty() {
         return Ok(Output::Text(

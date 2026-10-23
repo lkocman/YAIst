@@ -125,11 +125,8 @@ pub fn help(registry: &Registry, module: Option<&str>) -> String {
         Some(m) => {
             let mut out = format!("{} — {}\n", m.title, m.tagline);
             for s in registry.module_actions(m.id) {
-                let params: Vec<String> = s
-                    .params
-                    .iter()
-                    .map(|p| if p.required { format!("<{}>", p.name) } else { format!("[{}=…]", p.name) })
-                    .collect();
+                let params: Vec<String> =
+                    s.params.iter().map(|p| if p.required { format!("<{}>", p.name) } else { format!("[{}=…]", p.name) }).collect();
                 out.push_str(&format!("\n/{} {} {}\n    {}", m.id, s.verb().replace('_', "-"), params.join(" "), s.description));
             }
             out
@@ -141,5 +138,84 @@ pub fn help(registry: &Registry, module: Option<&str>) -> String {
             }
             out
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{validate, ActionSpec, Output, Param, Risk};
+
+    const OPEN: ActionSpec = ActionSpec {
+        id: "firewall.open_port",
+        title: "Open port",
+        description: "test",
+        risk: Risk::Change,
+        params: &[
+            Param::text("port", "port").check(validate::port),
+            Param::choice("protocol", &["tcp", "udp"], "proto").default("tcp"),
+            Param::text("zone", "zone").optional(),
+        ],
+    };
+
+    fn registry() -> Registry {
+        let mut reg = Registry::default();
+        reg.action(OPEN, |_, _| async { Ok(Output::Done(String::new())) });
+        reg
+    }
+
+    fn parse_args(line: &str) -> Args {
+        match parse(&registry(), line).expect("parses") {
+            Parsed::Action { spec, raw } => spec.validate(&raw).expect("valid"),
+            Parsed::Help(_) => panic!("expected an action"),
+        }
+    }
+
+    #[test]
+    fn positional_and_named_arguments() {
+        let a = parse_args("/firewall open-port 8080 udp");
+        assert_eq!((a.str("port"), a.str("protocol")), ("8080", "udp"));
+        let a = parse_args("/firewall open_port zone=public 8080");
+        assert_eq!((a.str("port"), a.str("protocol"), a.str("zone")), ("8080", "tcp", "public"));
+    }
+
+    #[test]
+    fn format_round_trips() {
+        // Optional parameters are always spelled out, so the formatted command
+        // is canonical however it was typed.
+        for (typed, canonical) in [
+            ("/firewall open-port 8080", "/firewall open-port 8080"),
+            ("/firewall open-port 8080 udp", "/firewall open-port 8080 protocol=udp"),
+            ("/firewall open-port zone=\"my zone\" 8080", "/firewall open-port 8080 zone=\"my zone\""),
+        ] {
+            let args = parse_args(typed);
+            assert_eq!(format(&OPEN, &args), canonical);
+            assert_eq!(parse_args(canonical), args);
+        }
+    }
+
+    #[test]
+    fn rejects_bad_input() {
+        let reg = registry();
+        assert!(parse(&reg, "/firewall nope").is_err());
+        assert!(parse(&reg, "/firewall open-port \"unterminated").is_err());
+        assert!(parse(&reg, "/firewall open-port 1 tcp zone extra").is_err());
+        let Ok(Parsed::Action { spec, raw }) = parse(&reg, "/firewall open-port 99999") else { panic!() };
+        assert!(spec.validate(&raw).is_err());
+        let Ok(Parsed::Action { spec, raw }) = parse(&reg, "/firewall open-port 80 icmp") else { panic!() };
+        assert!(spec.validate(&raw).is_err());
+    }
+
+    #[test]
+    fn unknown_parameters_are_refused() {
+        let mut raw = serde_json::Map::new();
+        raw.insert("port".into(), "80".into());
+        raw.insert("command".into(), "rm -rf /".into());
+        assert!(OPEN.validate(&raw).is_err());
+    }
+
+    #[test]
+    fn help_lists_modules() {
+        assert!(matches!(parse(&registry(), "/help").unwrap(), Parsed::Help(None)));
     }
 }

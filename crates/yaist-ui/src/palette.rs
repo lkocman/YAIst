@@ -103,7 +103,11 @@ impl Tokens {
 
     /// A module's accent, readable on this appearance's background.
     pub fn module_accent(&self, index: usize) -> Rgb {
-        if self.dark { accent(index) } else { blend(accent(index), MAPLE_MAROON, 0.30) }
+        if self.dark {
+            accent(index)
+        } else {
+            blend(accent(index), MAPLE_MAROON, 0.30)
+        }
     }
 
     pub fn risk(&self, risk: yaist_core::Risk) -> Rgb {

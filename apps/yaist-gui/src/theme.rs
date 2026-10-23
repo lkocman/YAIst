@@ -56,7 +56,11 @@ impl Tokens {
     }
 
     pub fn get(ctx: &egui::Context) -> Self {
-        if ctx.theme() == egui::Theme::Dark { Self::from(palette::Tokens::dark()) } else { Self::from(palette::Tokens::light()) }
+        if ctx.theme() == egui::Theme::Dark {
+            Self::from(palette::Tokens::dark())
+        } else {
+            Self::from(palette::Tokens::light())
+        }
     }
 
     pub fn hairline(&self) -> Stroke {

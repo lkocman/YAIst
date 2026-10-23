@@ -34,9 +34,12 @@ const STATUS: ActionSpec = ActionSpec {
     params: &[UNIT_PARAM],
 };
 
-const START: ActionSpec = ActionSpec { id: "services.start", title: "Start", description: "Start a service now.", risk: Risk::Change, params: &[UNIT_PARAM] };
-const STOP: ActionSpec = ActionSpec { id: "services.stop", title: "Stop", description: "Stop a running service.", risk: Risk::Change, params: &[UNIT_PARAM] };
-const RESTART: ActionSpec = ActionSpec { id: "services.restart", title: "Restart", description: "Restart a service.", risk: Risk::Change, params: &[UNIT_PARAM] };
+const START: ActionSpec =
+    ActionSpec { id: "services.start", title: "Start", description: "Start a service now.", risk: Risk::Change, params: &[UNIT_PARAM] };
+const STOP: ActionSpec =
+    ActionSpec { id: "services.stop", title: "Stop", description: "Stop a running service.", risk: Risk::Change, params: &[UNIT_PARAM] };
+const RESTART: ActionSpec =
+    ActionSpec { id: "services.restart", title: "Restart", description: "Restart a service.", risk: Risk::Change, params: &[UNIT_PARAM] };
 
 const ENABLE: ActionSpec = ActionSpec {
     id: "services.enable",
@@ -76,7 +79,15 @@ pub fn register(reg: &mut Registry) {
 
     reg.action(ENABLE, |ctx, args| async move {
         let u = unit(args.str("unit"));
-        ctx.call::<_, (bool, Vec<(String, String, String)>)>(SYSTEMD, SYSTEMD_PATH, MANAGER, "EnableUnitFiles", &(vec![u.as_str()], false, false), true).await?;
+        ctx.call::<_, (bool, Vec<(String, String, String)>)>(
+            SYSTEMD,
+            SYSTEMD_PATH,
+            MANAGER,
+            "EnableUnitFiles",
+            &(vec![u.as_str()], false, false),
+            true,
+        )
+        .await?;
         ctx.call::<_, ()>(SYSTEMD, SYSTEMD_PATH, MANAGER, "Reload", &(), true).await?;
         if args.bool("now") {
             job(&ctx, "StartUnit", &u).await?;
@@ -99,7 +110,11 @@ pub fn register(reg: &mut Registry) {
 
 /// `sshd` → `sshd.service`.
 fn unit(name: &str) -> String {
-    if name.contains('.') { name.to_owned() } else { format!("{name}.service") }
+    if name.contains('.') {
+        name.to_owned()
+    } else {
+        format!("{name}.service")
+    }
 }
 
 async fn job(ctx: &Context, method: &'static str, unit: &str) -> Result<()> {

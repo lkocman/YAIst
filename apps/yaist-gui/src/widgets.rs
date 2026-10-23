@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use egui::{Color32, CornerRadius, Galley, Rect, Response, Sense, Stroke, Ui, vec2};
+use egui::{vec2, Color32, CornerRadius, Galley, Rect, Response, Sense, Stroke, Ui};
 
 use crate::theme::{self, Tokens};
 
@@ -98,7 +98,11 @@ pub fn button_sized(ui: &mut Ui, text: &str, kind: Kind, width: f32, height: f32
     let fade = |c: Color32| if enabled { c } else { c.gamma_multiply(0.5) };
     ui.painter().rect(rect, CornerRadius::ZERO, fade(fill), Stroke::new(stroke.width, fade(stroke.color)), egui::StrokeKind::Inside);
     paint_centred(ui, rect, galley, fade(color));
-    if enabled { resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { resp }
+    if enabled {
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        resp
+    }
 }
 
 /// The light/dark switch: a sun in dark mode (switch to light), a moon in
@@ -196,7 +200,12 @@ pub fn window_edges(ctx: &egui::Context) {
     }
     let t = Tokens::get(ctx);
     let r = ctx.content_rect();
-    ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("window-border"))).rect_stroke(r, CornerRadius::ZERO, t.hairline(), egui::StrokeKind::Inside);
+    ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("window-border"))).rect_stroke(
+        r,
+        CornerRadius::ZERO,
+        t.hairline(),
+        egui::StrokeKind::Inside,
+    );
     let Some(p) = ctx.input(|i| i.pointer.hover_pos()).filter(|p| r.contains(*p)) else { return };
     let near = |d: f32| d < RESIZE_EDGE;
     let corner = |d: f32| d < 3.0 * RESIZE_EDGE;
