@@ -14,6 +14,10 @@ Status: **prototype**. See [PLAN.md](PLAN.md) for the design and
 
 ## Modules
 
+yAIst opens on a **welcome screen** that takes over from openSUSE-welcome:
+starting points (updates, snapshot, software, users, firewall, new releases),
+questions to try, the system at a glance and links into the community.
+
 System (hostname, time zone, NTP), Users, Services (systemd), Firewall
 (firewalld), SELinux, Packages and Repositories (zypper, OBS community
 repositories), Snapshots (snapper: compare, create, roll back) and Upgrade
@@ -34,6 +38,12 @@ cargo build                      # or: scripts/build-in-container.sh build
 target/debug/yaist-gui           # desktop
 target/debug/yaist               # terminal (ctrl-q quits)
 ```
+
+Familiar commands work in the prompt too and show what they map to, so
+`zypper in fish`, `sudo systemctl restart sshd` or `zypper --releasever 16.1
+dup` give the same confirmation card as asking in plain language. Every plan
+card shows the equivalent terminal command, and after a change, exactly what
+yAIst executed.
 
 Command line:
 

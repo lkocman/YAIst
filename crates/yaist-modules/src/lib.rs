@@ -13,11 +13,13 @@ mod upgrade;
 mod users;
 mod zypper;
 
-use yaist_core::Registry;
+use yaist_core::{ModuleSpec, Registry};
 
 /// All modules, in sidebar order.
 pub fn registry() -> Registry {
     let mut reg = Registry::default();
+    // The start screen; clients draw it themselves around the system overview.
+    reg.module(ModuleSpec { id: "welcome", title: "Welcome", tagline: "Start here", overview: "system.overview", row_actions: &[] });
     system::register(&mut reg);
     users::register(&mut reg);
     services::register(&mut reg);

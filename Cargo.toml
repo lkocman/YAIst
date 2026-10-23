@@ -21,7 +21,7 @@ zbus = { version = "5", default-features = false, features = ["tokio"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
 roxmltree = "0.20"
 ratatui = "0.29"
-eframe = { version = "0.36", default-features = false, features = ["glow", "wayland", "x11", "accesskit"] }
+eframe = { version = "0.36", default-features = false, features = ["glow", "wayland", "x11", "accesskit", "links"] }
 egui = { version = "0.36", default-features = false }
 
 [profile.dev.package."*"]

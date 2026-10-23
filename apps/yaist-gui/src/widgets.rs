@@ -105,6 +105,18 @@ pub fn button_sized(ui: &mut Ui, text: &str, kind: Kind, width: f32, height: f32
     }
 }
 
+/// A suggestion chip: natural-case text on a sunken fill; inverts on hover.
+pub fn chip(ui: &mut Ui, text: &str) -> Response {
+    let t = Tokens::get(ui.ctx());
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), egui::FontId::new(13.0, egui::FontFamily::Proportional), t.ink);
+    let (rect, resp) = ui.allocate_exact_size(galley.size() + vec2(24.0, 14.0), Sense::click());
+    let hovered = resp.hovered();
+    let (fill, ink) = if hovered { (t.invert_bg, t.invert_fg) } else { (t.sunken, t.ink) };
+    ui.painter().rect(rect, CornerRadius::ZERO, fill, t.hairline(), egui::StrokeKind::Inside);
+    paint_centred(ui, rect, galley, ink);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 /// The light/dark switch: a sun in dark mode (switch to light), a moon in
 /// light mode. Drawn, so it needs no symbol font.
 pub fn theme_toggle(ui: &mut Ui, dark: bool, height: f32) -> Response {

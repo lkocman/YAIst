@@ -2,6 +2,7 @@
 //! middle, the conversation on the right.
 
 mod app;
+mod art;
 mod theme;
 mod widgets;
 

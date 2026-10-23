@@ -13,6 +13,7 @@ use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Table
 use ratatui::Frame;
 use yaist_core::{ActionSpec, Output, ParamKind, Risk};
 use yaist_ui::palette::{Rgb, Tokens};
+use yaist_ui::welcome::{self, Start};
 use yaist_ui::{row_action_is_direct, row_args, tone_of, Cmd, Entry, Form, LlmStatus, Panel, PlanStatus, Session, State};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -219,7 +220,7 @@ impl App {
         let next = match key.code {
             KeyCode::Up | KeyCode::Char('k') => sel.checked_sub(1).unwrap_or(n - 1),
             KeyCode::Down | KeyCode::Char('j') => (sel + 1) % n,
-            KeyCode::Char(d @ '1'..='9') => (d as usize - '1' as usize).min(n - 1),
+            KeyCode::Char(d @ '0'..='9') => (d as usize - '0' as usize).min(n - 1),
             KeyCode::Enter | KeyCode::Right => {
                 self.focus = Focus::Panel;
                 return;
@@ -231,13 +232,25 @@ impl App {
     }
 
     fn panel_key(&mut self, key: KeyEvent) {
-        let rows = {
+        let (rows, welcome_items) = {
             let s = self.session.state();
-            match &s.modules[s.selected].panel {
-                Panel::Ready(Output::Table(t)) => t.rows.len(),
-                _ => 0,
+            if s.modules[s.selected].spec.id == "welcome" {
+                let items = welcome::start_items(&s.distro);
+                (items.len(), Some(items))
+            } else {
+                let rows = match &s.modules[s.selected].panel {
+                    Panel::Ready(Output::Table(t)) => t.rows.len(),
+                    _ => 0,
+                };
+                (rows, None)
             }
         };
+        if let (Some(items), KeyCode::Enter) = (&welcome_items, key.code) {
+            if let Some(item) = items.get(self.table.selected().unwrap_or(0)) {
+                self.start(item.start);
+            }
+            return;
+        }
         let sel = self.table.selected().unwrap_or(0);
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => self.table.select(Some(sel.saturating_sub(1))),
@@ -252,6 +265,27 @@ impl App {
                 self.session.send(Cmd::Refresh(i));
             }
             _ => {}
+        }
+    }
+
+    fn start(&mut self, start: Start) {
+        match start {
+            Start::Module(id) => {
+                let i = self.session.state().module_index(id);
+                if let Some(i) = i {
+                    self.session.select(i);
+                    self.table.select(Some(0));
+                }
+            }
+            Start::Action(id) => {
+                let Some(spec) = self.session.registry.get(id).copied() else { return };
+                if spec.params.iter().any(|p| p.required) {
+                    self.open_form(Form::new(spec, &Default::default()));
+                } else {
+                    self.session.send(Cmd::Propose { action: spec.id, raw: Default::default() });
+                    self.focus = Focus::Input;
+                }
+            }
         }
     }
 
@@ -497,7 +531,7 @@ impl App {
             let width = inner.width as usize;
             let mut title = vec![
                 Span::styled(if selected { "▌" } else { " " }, st(t.module_accent(i))),
-                self.tag(&format!("{:02}", i + 1), t.module_accent(i)),
+                self.tag(&format!("{i:02}"), t.module_accent(i)),
                 Span::styled(format!(" {}", m.spec.title), st(if selected { t.ink_strong } else { t.ink }).add_modifier(Modifier::BOLD)),
             ];
             let used: usize = title.iter().map(|s| s.content.chars().count()).sum();
@@ -516,11 +550,14 @@ impl App {
         let accent = t.module_accent(s.selected);
         let block = self.block(self.focus == Focus::Panel).title(Line::from(vec![
             Span::raw(" "),
-            self.hud(&format!("{:02} / {}", s.selected + 1, m.spec.title), t.faint),
+            self.hud(&format!("{:02} / {}", s.selected, m.spec.title), t.faint),
             Span::raw(" "),
         ]));
         let inner = block.inner(area);
         f.render_widget(block, area);
+        if m.spec.id == "welcome" {
+            return self.draw_welcome(f, inner, s, table_state);
+        }
         let [head, buttons, content] = Layout::vertical([Constraint::Length(2), Constraint::Length(2), Constraint::Min(1)]).areas(inner);
 
         f.render_widget(
@@ -594,6 +631,69 @@ impl App {
                 f.render_widget(Paragraph::new(text.clone()).style(self.style(t.ink)).wrap(ratatui::widgets::Wrap { trim: false }), content);
             }
         }
+    }
+
+    fn draw_welcome(&self, f: &mut Frame, area: Rect, s: &State, cursor: &mut TableState) {
+        let t = self.t;
+        let d = &s.distro;
+        let mut lines: Vec<Line> = Vec::new();
+        let name = if d.pretty.is_empty() { "openSUSE".to_owned() } else { d.pretty.clone() };
+        let (brand, rest) = name.split_once(' ').map(|(a, b)| (a.to_owned(), format!(" {b}"))).unwrap_or((name.clone(), String::new()));
+        for (i, art) in welcome::ASCII_CHAMELEON.iter().enumerate() {
+            let mut spans = vec![Span::styled(format!(" {art}"), self.style(t.accent))];
+            match i {
+                2 => spans.push(self.hud("  welcome to", t.muted)),
+                3 => {
+                    spans.push(Span::styled(format!("  {brand}"), self.style(t.accent).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled(rest.clone(), self.style(t.ink_strong).add_modifier(Modifier::BOLD)));
+                }
+                5 => spans.push(Span::styled("  Ask in plain language below, or start here.", self.style(t.muted))),
+                _ => {}
+            }
+            lines.push(Line::from(spans));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![Span::raw(" "), self.hud("01 / get started", t.faint), self.hud("   ↑↓ choose · enter start", t.faint)]));
+        let items = welcome::start_items(d);
+        let sel = cursor.selected().unwrap_or(0).min(items.len().saturating_sub(1));
+        cursor.select(Some(sel));
+        for (i, item) in items.iter().enumerate() {
+            let focused = self.focus == Focus::Panel && i == sel;
+            let bg = if focused { t.sunken } else { t.bg };
+            lines.push(Line::from(vec![
+                Span::styled(if focused { " ▌" } else { "  " }, Style::new().fg(c(t.accent)).bg(c(bg))),
+                self.tag(&format!("{:02}", i + 1), t.module_accent(i + 1)),
+                Span::styled(format!(" {:<22}", item.title), Style::new().fg(c(t.ink_strong)).bg(c(bg)).add_modifier(Modifier::BOLD)),
+                Span::styled(item.text.to_owned(), Style::new().fg(c(t.muted)).bg(c(bg))),
+            ]));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![Span::raw(" "), self.hud("02 / try asking", t.faint)]));
+        let mut chips = vec![Span::raw(" ")];
+        for q in welcome::suggestions(d) {
+            chips.push(Span::styled(format!(" {q} "), Style::new().fg(c(t.ink)).bg(c(t.sunken))));
+            chips.push(Span::raw("  "));
+        }
+        lines.push(Line::from(chips));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![Span::raw(" "), self.hud("03 / your system", t.faint)]));
+        if let Panel::Ready(Output::Facts(facts)) = &s.modules[s.selected].panel {
+            for (k, v) in facts.iter().filter(|(_, v)| !v.contains('\n')) {
+                lines.push(Line::from(vec![
+                    Span::styled(format!(" {:<18}", k.to_uppercase()), self.style(t.faint)),
+                    Span::styled(v.clone(), self.style(t.ink)),
+                ]));
+            }
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![Span::raw(" "), self.hud("04 / openSUSE community", t.faint)]));
+        for l in welcome::LINKS {
+            lines.push(Line::from(vec![
+                Span::styled(format!(" {:<20}", l.title), self.style(t.ink_strong)),
+                Span::styled(l.url.to_owned(), self.style(t.accent)),
+            ]));
+        }
+        f.render_widget(Paragraph::new(lines), area);
     }
 
     fn draw_conversation(&self, f: &mut Frame, area: Rect, s: &State, scroll_up: &mut u16) {

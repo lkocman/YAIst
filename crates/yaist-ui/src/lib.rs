@@ -5,6 +5,7 @@
 pub mod palette;
 mod session;
 mod state;
+pub mod welcome;
 
 pub use session::{Cmd, Session};
 pub use state::{Entry, LlmStatus, ModuleView, Panel, Plan, PlanStatus, State};

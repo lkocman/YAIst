@@ -16,7 +16,8 @@ pub const GABBRO_GRAY: Rgb = [0xb8, 0xae, 0xab];
 pub const MAPLE_MAROON: Rgb = [0x30, 0x1a, 0x14];
 
 /// Module number tags cycle through these, like ArtCraft's per-app colours.
-pub const ACCENTS: [Rgb; 7] = [BUTTERFLY_BLUE, ORANGE, PLUM_PURPLE, RADISH_RED, TURQUOISE_TEAL, GEEKO_GREEN, YARROW_YELLOW];
+/// The welcome screen (index 0) gets Geeko green.
+pub const ACCENTS: [Rgb; 7] = [GEEKO_GREEN, BUTTERFLY_BLUE, ORANGE, PLUM_PURPLE, RADISH_RED, TURQUOISE_TEAL, YARROW_YELLOW];
 
 pub fn accent(index: usize) -> Rgb {
     ACCENTS[index % ACCENTS.len()]

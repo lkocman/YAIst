@@ -3,6 +3,7 @@ use std::time::Duration;
 use egui::{vec2, Color32, CornerRadius, FontId, Frame, Margin, RichText, Stroke, Ui};
 use serde_json::{Map, Value};
 use yaist_core::{Output, ParamKind, Risk, Table};
+use yaist_ui::welcome::{self, Start};
 use yaist_ui::{row_action_is_direct, row_args, tone_of, Cmd, Entry, Form, LlmStatus, ModuleView, Panel, Plan, PlanStatus, Session};
 
 use crate::theme::{self, Tokens};
@@ -32,6 +33,7 @@ struct View {
     llm: LlmStatus,
     llm_url: String,
     distro: String,
+    distro_info: yaist_core::Distro,
     pending: bool,
 }
 
@@ -105,6 +107,7 @@ impl App {
             llm: s.llm.clone(),
             llm_url: s.llm_url.clone(),
             distro: if s.distro.pretty.is_empty() { s.distro.id.clone() } else { s.distro.pretty.clone() },
+            distro_info: s.distro.clone(),
             pending: s.pending_plan().is_some(),
         }
     }
@@ -233,8 +236,14 @@ impl App {
         let width = SIDEBAR_W - 1.0;
         let top = ui.cursor().top();
         ui.painter().hline(full.left()..=full.left() + width, top, t.hairline());
+        egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| self.module_list(ui, v, width));
+    }
+
+    fn module_list(&mut self, ui: &mut Ui, v: &View, width: f32) {
+        let t = Tokens::get(ui.ctx());
+        ui.spacing_mut().item_spacing.y = 0.0;
         for (i, m) in v.modules.iter().enumerate() {
-            let (rect, resp) = ui.allocate_exact_size(vec2(width, 66.0), egui::Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(vec2(width, 58.0), egui::Sense::click());
             let selected = i == v.selected;
             let p = ui.painter();
             if selected || resp.hovered() {
@@ -244,8 +253,8 @@ impl App {
                 p.rect_filled(egui::Rect::from_min_size(rect.min, vec2(3.0, rect.height())), CornerRadius::ZERO, t.module(i));
             }
             p.hline(rect.x_range(), rect.bottom() - 0.5, t.hairline());
-            let galley = widgets::caps(ui, &format!("{:02}", i + 1), theme::HUD_SIZE, theme::mono_bold(), theme::HUD_SPACING, t.invert_fg);
-            let tag = egui::Rect::from_min_size(rect.min + vec2(22.0, 14.0), galley.size() + vec2(14.0, 8.0));
+            let galley = widgets::caps(ui, &format!("{:02}", i), theme::HUD_SIZE, theme::mono_bold(), theme::HUD_SPACING, t.invert_fg);
+            let tag = egui::Rect::from_min_size(rect.min + vec2(22.0, 10.0), galley.size() + vec2(14.0, 8.0));
             p.rect_filled(tag, CornerRadius::ZERO, t.module(i));
             p.galley_with_override_text_color(tag.center() - galley.size() / 2.0, galley, t.invert_fg);
             p.text(
@@ -256,7 +265,7 @@ impl App {
                 if selected { t.ink_strong } else { t.ink },
             );
             p.text(
-                egui::pos2(rect.left() + 22.0, rect.top() + 47.0),
+                egui::pos2(rect.left() + 22.0, rect.top() + 42.0),
                 egui::Align2::LEFT_CENTER,
                 m.spec.tagline,
                 FontId::new(12.0, egui::FontFamily::Proportional),
@@ -276,9 +285,12 @@ impl App {
         let t = Tokens::get(ui.ctx());
         let i = v.selected;
         let m = &v.modules[i];
+        if m.spec.id == "welcome" {
+            return self.welcome_page(ui, v);
+        }
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
-            widgets::tag(ui, &format!("{:02}", i + 1), t.module(i), t.invert_fg);
+            widgets::tag(ui, &format!("{:02}", i), t.module(i), t.invert_fg);
             widgets::eyebrow(ui, "module", m.spec.title);
             if let Panel::Ready(out) = &m.panel {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -407,6 +419,144 @@ impl App {
                 }
             }
         });
+    }
+
+    /// The start screen: greeting, starting points, questions to try, the
+    /// system at a glance and community links.
+    fn welcome_page(&mut self, ui: &mut Ui, v: &View) {
+        let t = Tokens::get(ui.ctx());
+        let d = &v.distro_info;
+        egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let (rect, _) = ui.allocate_exact_size(vec2(270.0, 190.0), egui::Sense::hover());
+                crate::art::chameleon(ui.painter(), rect, &t);
+                ui.add_space(20.0);
+                ui.vertical(|ui| {
+                    ui.add_space(42.0);
+                    widgets::hud(ui, "Welcome to", t.muted);
+                    ui.add_space(4.0);
+                    let name = if d.pretty.is_empty() { "openSUSE".to_owned() } else { d.pretty.clone() };
+                    let (brand, rest) = name.split_once(' ').map(|(a, b)| (a.to_owned(), format!(" {b}"))).unwrap_or((name.clone(), String::new()));
+                    let mut job = egui::text::LayoutJob::default();
+                    let font = FontId::new(38.0, theme::display());
+                    job.append(&brand, 0.0, egui::TextFormat { font_id: font.clone(), color: t.accent, ..Default::default() });
+                    job.append(&rest, 0.0, egui::TextFormat { font_id: font, color: t.ink_strong, ..Default::default() });
+                    ui.label(job);
+                    ui.add_space(6.0);
+                    ui.label(
+                        RichText::new(
+                            "yAIst helps you set up and look after this computer. Ask in plain language on the right, or start with one of these.",
+                        )
+                        .size(14.0)
+                        .color(t.muted),
+                    );
+                });
+            });
+            ui.add_space(22.0);
+
+            widgets::eyebrow(ui, "01", "Get started");
+            ui.add_space(10.0);
+            let items = welcome::start_items(d);
+            let cols = if ui.available_width() > 720.0 { 3 } else { 2 };
+            let card_w = (ui.available_width() / cols as f32).floor();
+            for (row, chunk) in items.chunks(cols).enumerate() {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    for (k, item) in chunk.iter().enumerate() {
+                        let n = row * cols + k + 1;
+                        let (rect, resp) = ui.allocate_exact_size(vec2(card_w, 132.0), egui::Sense::click());
+                        let p = ui.painter();
+                        p.rect(rect, CornerRadius::ZERO, if resp.hovered() { t.sunken } else { t.bg }, t.hairline(), egui::StrokeKind::Inside);
+                        let mut cu =
+                            ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(16.0)).layout(egui::Layout::top_down(egui::Align::Min)));
+                        widgets::tag(&mut cu, &format!("{n:02}"), t.module(n), t.invert_fg);
+                        cu.add_space(8.0);
+                        cu.label(RichText::new(item.title).family(theme::semibold()).size(16.0).color(t.ink_strong));
+                        cu.label(RichText::new(item.text).size(13.0).color(t.muted));
+                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            self.start(item.start, v);
+                        }
+                    }
+                });
+            }
+            ui.add_space(24.0);
+
+            widgets::eyebrow(ui, "02", "Try asking");
+            ui.add_space(10.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
+                for s in welcome::suggestions(d) {
+                    if widgets::chip(ui, s).clicked() {
+                        self.acts.push(Act::Submit(s.to_owned()));
+                    }
+                }
+            });
+            ui.add_space(24.0);
+
+            widgets::eyebrow(ui, "03", "Your system");
+            ui.add_space(10.0);
+            match &v.modules[v.selected].panel {
+                Panel::Ready(Output::Facts(f)) => facts_grid(ui, f, 6.0),
+                Panel::Failed(e) => {
+                    ui.label(RichText::new(e).color(t.bad));
+                }
+                _ => {
+                    widgets::hud(ui, "loading", t.faint);
+                }
+            }
+            ui.add_space(24.0);
+
+            widgets::eyebrow(ui, "04", "openSUSE community");
+            ui.add_space(10.0);
+            let link_w = (ui.available_width() / cols as f32).floor();
+            for chunk in welcome::LINKS.chunks(cols) {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    for link in chunk {
+                        let (rect, resp) = ui.allocate_exact_size(vec2(link_w, 64.0), egui::Sense::click());
+                        let hovered = resp.hovered();
+                        let p = ui.painter();
+                        p.rect(rect, CornerRadius::ZERO, if hovered { t.sunken } else { t.bg }, t.hairline(), egui::StrokeKind::Inside);
+                        p.text(
+                            rect.min + vec2(16.0, 14.0),
+                            egui::Align2::LEFT_TOP,
+                            format!("{} ↗", link.title),
+                            FontId::new(14.5, theme::semibold()),
+                            if hovered { t.accent } else { t.ink_strong },
+                        );
+                        p.text(
+                            rect.min + vec2(16.0, 36.0),
+                            egui::Align2::LEFT_TOP,
+                            link.text,
+                            FontId::new(12.5, egui::FontFamily::Proportional),
+                            t.muted,
+                        );
+                        if resp.on_hover_text(link.url).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(link.url));
+                        }
+                    }
+                });
+            }
+            ui.add_space(24.0);
+        });
+    }
+
+    fn start(&mut self, start: Start, v: &View) {
+        match start {
+            Start::Module(id) => {
+                if let Some(i) = v.modules.iter().position(|m| m.spec.id == id) {
+                    self.acts.push(Act::Select(i));
+                }
+            }
+            Start::Action(id) => {
+                let Some(spec) = self.session.registry.get(id).copied() else { return };
+                if spec.params.iter().any(|p| p.required) {
+                    self.acts.push(Act::Form(Form::new(spec, &Map::new())));
+                } else {
+                    self.acts.push(Act::Propose(spec.id, Map::new()));
+                }
+            }
+        }
     }
 
     fn row_action(&mut self, a: &yaist_core::ActionSpec, table: &Table, row: &[String]) {
