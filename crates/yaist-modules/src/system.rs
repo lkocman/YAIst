@@ -105,6 +105,7 @@ async fn overview(ctx: &Context) -> anyhow::Result<Output> {
         ("Hostname".into(), host),
         ("Operating system".into(), if d.pretty.is_empty() { d.id.clone() } else { d.pretty.clone() }),
         ("Kernel".into(), kernel),
+        ("Mode".into(), if d.transactional { "immutable".into() } else { "standard".into() }),
         ("Update model".into(), updates.into()),
         ("Time zone".into(), tz),
         ("Network time".into(), format!("{}{}", if ntp { "on" } else { "off" }, if synced { ", synchronised" } else { "" })),

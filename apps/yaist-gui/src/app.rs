@@ -456,6 +456,13 @@ impl App {
                     job.append(&rest, 0.0, egui::TextFormat { font_id: font, color: t.ink_strong, ..Default::default() });
                     ui.label(job);
                     ui.add_space(6.0);
+                    let (mode, explanation) = welcome::mode(d);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing.x = 10.0;
+                        widgets::tag(ui, mode, t.invert_bg, t.invert_fg);
+                        ui.label(RichText::new(explanation).size(13.0).color(t.ink));
+                    });
+                    ui.add_space(8.0);
                     ui.label(
                         RichText::new(
                             "yAIst helps you set up and look after this computer. Ask in plain language on the right, or start with one of these.",

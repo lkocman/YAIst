@@ -4,6 +4,18 @@
 
 use yaist_core::Distro;
 
+/// How this system takes changes, shown under the welcome title:
+/// (label, explanation).
+pub fn mode(d: &Distro) -> (&'static str, &'static str) {
+    if d.transactional {
+        ("Immutable", "Read-only system: updates and software go into a new snapshot, used after a reboot.")
+    } else if d.rolling {
+        ("Standard", "Rolling release: always the latest software, updated with zypper dup.")
+    } else {
+        ("Standard", "Regular release: updates and software install directly with zypper.")
+    }
+}
+
 /// What a starting point does when chosen.
 #[derive(Clone, Copy, Debug)]
 pub enum Start {

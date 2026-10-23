@@ -708,6 +708,12 @@ impl App {
                     spans.push(Span::styled(format!("  {brand}"), self.style(t.accent).add_modifier(Modifier::BOLD)));
                     spans.push(Span::styled(rest.clone(), self.style(t.ink_strong).add_modifier(Modifier::BOLD)));
                 }
+                4 => {
+                    let (mode, explanation) = welcome::mode(d);
+                    spans.push(Span::raw("  "));
+                    spans.push(self.tag(&mode.to_uppercase(), t.invert_bg));
+                    spans.push(Span::styled(format!(" {explanation}"), self.style(t.ink)));
+                }
                 5 => spans.push(Span::styled("  Ask in plain language below, or start here.", self.style(t.muted))),
                 _ => {}
             }
