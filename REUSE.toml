@@ -32,6 +32,14 @@ precedence = "override"
 SPDX-FileCopyrightText = "2026 Lubos Kocman"
 SPDX-License-Identifier = "Apache-2.0"
 
+# SLES product description used by the SLE migration, from
+# opensuse-migration-tool (Apache-2.0).
+[[annotations]]
+path = "assets/migration/SLES.prod"
+precedence = "override"
+SPDX-FileCopyrightText = "opensuse-migration-tool contributors (https://github.com/openSUSE/opensuse-migration-tool)"
+SPDX-License-Identifier = "Apache-2.0"
+
 # The welcome screen's pirate Geeko, from openSUSE-welcome. A separate data
 # file loaded at run time, never compiled into the binaries.
 [[annotations]]

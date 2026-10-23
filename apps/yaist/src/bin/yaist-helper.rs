@@ -212,15 +212,17 @@ fn migrate_rolling(target: &str, disable: &[String]) -> R {
     Ok(())
 }
 
-/// The SLES product description for a Leap version, shipped with YAiST.
-fn sles_product(version: &str) -> Option<std::path::PathBuf> {
-    let name = format!("SLES-{version}.prod");
-    let dev = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.parent()?.parent()?.join("assets/migration").join(&name)));
-    [Some(Path::new("/usr/share/yaist/migration").join(&name)), dev].into_iter().flatten().find(|p| p.is_file())
+/// The SLES product description shipped with YAiST (opensuse-migration-tool's
+/// SLES.prod). As in that tool it is used for every Leap version: the SCC
+/// registration and the dup bring the proper product.
+fn sles_product() -> Option<std::path::PathBuf> {
+    let name = "SLES.prod";
+    let dev = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.parent()?.parent()?.join("assets/migration").join(name)));
+    [Some(Path::new("/usr/share/yaist/migration").join(name)), dev].into_iter().flatten().find(|p| p.is_file())
 }
 
-/// Leap 15.6 to SUSE Linux Enterprise Server 15 SP6, the way
-/// opensuse-migration-tool does: SLES os-release and product, registration
+/// Leap to SUSE Linux Enterprise Server, the way opensuse-migration-tool does
+/// (a community tool, not supported by SUSE; the resulting SLES is): SLES os-release and product, registration
 /// with SCC (and PackageHub), dup, SLE branding. The registration code comes
 /// in a file that only the user can read, so it never shows on a command line
 /// here; it is deleted at once.
@@ -244,7 +246,7 @@ fn migrate_sle(email: &str, regcode_file: &str, disable: &[String]) -> R {
         return Err("migrating immutable systems to SLE is not supported".into());
     }
     let version = os_release("VERSION_ID");
-    let product = sles_product(&version).ok_or_else(|| format!("migrating Leap {version} to SLE is not supported yet"))?;
+    let product = sles_product().ok_or("SLES.prod not found (should be in /usr/share/yaist/migration)")?;
     let (major, minor) = version.split_once('.').ok_or("unexpected VERSION_ID")?;
     let arch = std::env::consts::ARCH;
 
@@ -289,14 +291,21 @@ fn migrate_sle(email: &str, regcode_file: &str, disable: &[String]) -> R {
         ],
     );
     let _ = zypper(&["remove", "opensuse-welcome"]);
-    zypper(&[
-        "install",
-        &format!("branding-SLE-{major}"),
-        "grub2-branding-SLE",
-        &format!("wallpaper-branding-SLE-{major}"),
-        "plymouth-branding-SLE",
-        "systemd-presets-branding-SLE",
-    ])?;
+    // Branding for the SLE major version, as the tool does with -15; cosmetic,
+    // so never fatal.
+    let branding = |m: &str| {
+        zypper(&[
+            "install",
+            &format!("branding-SLE-{m}"),
+            "grub2-branding-SLE",
+            &format!("wallpaper-branding-SLE-{m}"),
+            "plymouth-branding-SLE",
+            "systemd-presets-branding-SLE",
+        ])
+    };
+    if branding(major).is_err() && major != "15" && branding("15").is_err() {
+        println!("    (SLE branding could not be installed; the system works without it)");
+    }
     println!("==> migrated to SUSE Linux Enterprise Server {major} SP{minor}; reboot to finish");
     Ok(())
 }

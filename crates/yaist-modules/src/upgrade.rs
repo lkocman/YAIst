@@ -75,7 +75,7 @@ const MIGRATE: ActionSpec = ActionSpec {
 const TO_SLE: ActionSpec = ActionSpec {
     id: "upgrade.to_sle",
     title: "SUSE Linux Enterprise",
-    description: "Migrate Leap 15.6 to SUSE Linux Enterprise Server 15 SP6 for official support by SUSE. Needs a subscription: the email and registration code from the SUSE Customer Center. One-way.",
+    description: "Migrate Leap to SUSE Linux Enterprise Server for official support by SUSE (the same version, e.g. Leap 16.0 to SLES 16.0). Needs a subscription: the email and registration code from the SUSE Customer Center. The migration follows the community opensuse-migration-tool and is not itself supported by SUSE; the resulting SLES is. One-way.",
     risk: Risk::Dangerous,
     params: &[
         Param::text("email", "Email address of your SUSE Customer Center account").check(email_ok),
@@ -110,9 +110,9 @@ pub fn register(reg: &mut Registry) {
             "sudo cp /etc/os-release /etc/os-release.backup   # then write a SLES os-release and product".into(),
             "sudo rpm -e --nodeps openSUSE-release openSUSE-repos".into(),
             format!("sudo suseconnect -e {} -r REGCODE", sq(a.str("email"))),
-            "sudo suseconnect -p PackageHub/15.6/$(uname -m)".into(),
+            "sudo suseconnect -p PackageHub/$VERSION_ID/$(uname -m)".into(),
             "sudo zypper dup --force-resolution --allow-vendor-change --download-in-advance".into(),
-            "sudo zypper install branding-SLE-15 grub2-branding-SLE wallpaper-branding-SLE-15 plymouth-branding-SLE systemd-presets-branding-SLE"
+            "sudo zypper install branding-SLE-<major> grub2-branding-SLE wallpaper-branding-SLE-<major> plymouth-branding-SLE systemd-presets-branding-SLE"
                 .into(),
             "sudo reboot".into(),
         ]
@@ -447,22 +447,23 @@ async fn targets(ctx: &Context) -> Result<Output> {
             "migrate".into(),
             sr.into(),
             "Tumbleweed with batched updates about once a month: rolling, but calmer.".into(),
-            rolling_notes,
+            rolling_notes.clone(),
         ]);
-        let (title, status, notes) = if d.version == "15.6" {
-            (
-                "SUSE Linux Enterprise Server 15 SP6".to_owned(),
-                "ready",
-                "needs a subscription: email and registration code from the SUSE Customer Center".to_owned(),
-            )
-        } else {
-            (
-                format!("SUSE Linux Enterprise ({line} {} → SLES)", d.version),
-                "not available",
-                format!("not supported from {line} {} yet; see {SUSE_SERVER}", d.version),
-            )
+        let title = match d.version.split_once('.') {
+            Some((major, minor)) if major.parse::<u32>().unwrap_or(0) < 16 => format!("SUSE Linux Enterprise Server {major} SP{minor}"),
+            _ => format!("SUSE Linux Enterprise Server {}", d.version),
         };
-        t.push(vec!["sle".into(), title, "support".into(), status.into(), "Official support by SUSE, with a subscription. One-way.".into(), notes]);
+        let notes = format!(
+            "needs a subscription (email and registration code from the SUSE Customer Center); the migration is community-made (opensuse-migration-tool steps), not supported by SUSE; {rolling_notes}"
+        );
+        t.push(vec![
+            "sle".into(),
+            title,
+            "support".into(),
+            "ready".into(),
+            "Official support by SUSE for the resulting system, with a subscription. One-way.".into(),
+            notes,
+        ]);
     }
     Ok(Output::Table(t))
 }
@@ -519,8 +520,8 @@ fn done(what: &str, disabled: &[String]) -> String {
 /// can read, never on a command line.
 async fn to_sle(ctx: &Context, email: &str, regcode: &str, keep: &[String]) -> Result<Output> {
     let d = &ctx.distro;
-    if d.id != "opensuse-leap" || d.version != "15.6" || d.transactional {
-        bail!("migrating to SUSE Linux Enterprise is supported from Leap 15.6 for now; see {SUSE_SERVER}");
+    if d.id != "opensuse-leap" || d.transactional {
+        bail!("migrating to SUSE Linux Enterprise works from (non-immutable) Leap; see {SUSE_SERVER}");
     }
     let (aliases, _) = repos_to_disable(ctx, keep, ROLLING).await?;
     let dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
@@ -536,7 +537,7 @@ async fn to_sle(ctx: &Context, email: &str, regcode: &str, keep: &[String]) -> R
     let result = helper::run(ctx, &args).await;
     let _ = std::fs::remove_file(&path);
     result?;
-    Ok(Output::Done(done("SUSE Linux Enterprise Server 15 SP6", &aliases)))
+    Ok(Output::Done(done(&format!("SUSE Linux Enterprise Server {}", d.version), &aliases)))
 }
 
 #[cfg(test)]
