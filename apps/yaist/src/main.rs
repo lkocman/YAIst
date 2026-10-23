@@ -103,10 +103,20 @@ fn cli_ask(question: &str) -> Result<()> {
         match e {
             Entry::User(t) => println!("you    > {t}"),
             Entry::Command(c) => println!("cmd    > {c}"),
-            Entry::AgentRan { command, ok } => println!("ran    > {command} ({})", if *ok { "ok" } else { "failed" }),
+            Entry::AgentRan { command, shell, ok } => {
+                println!("ran    > {command} ({})", if *ok { "ok" } else { "failed" });
+                for c in shell {
+                    println!("         $ {c}");
+                }
+            }
             Entry::Assistant { text, elapsed } => println!("yaist  > {text}  [{:.1}s]", elapsed.as_secs_f32()),
-            Entry::Plan(p) => println!("PLAN   > [{}] {}  (not applied)", p.spec.risk.label(), p.command),
-            Entry::Result { title, output } => println!("result > {title}: {}", output.headline()),
+            Entry::Plan(p) => {
+                println!("PLAN   > [{}] {}  (not applied)", p.spec.risk.label(), p.command);
+                for c in &p.shell {
+                    println!("         $ {c}");
+                }
+            }
+            Entry::Result { title, output, .. } => println!("result > {title}: {}", output.headline()),
             Entry::Error(e) => println!("error  > {e}"),
             Entry::Notice(n) => println!("note   > {n}"),
         }

@@ -1,6 +1,7 @@
 //! Hostname, time zone, time sync and an overview of the machine, via
 //! systemd's hostnamed and timedated.
 
+use yaist_core::shell_quote as sq;
 use yaist_core::{validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk};
 
 const HOSTNAME1: &str = "org.freedesktop.hostname1";
@@ -62,6 +63,11 @@ pub fn register(reg: &mut Registry) {
         ctx.call::<_, ()>(TIMEDATE1, TIMEDATE1_PATH, TIMEDATE1, "SetNTP", &(on, true), true).await?;
         Ok(Output::Done(format!("Network time synchronisation turned {}", if on { "on" } else { "off" })))
     });
+
+    reg.shell(OVERVIEW.id, |_, _| vec!["hostnamectl".into(), "timedatectl".into()]);
+    reg.shell(SET_HOSTNAME.id, |a, _| vec![format!("sudo hostnamectl set-hostname {}", sq(a.str("hostname")))]);
+    reg.shell(SET_TIMEZONE.id, |a, _| vec![format!("sudo timedatectl set-timezone {}", sq(a.str("timezone")))]);
+    reg.shell(SET_NTP.id, |a, _| vec![format!("sudo timedatectl set-ntp {}", a.bool("enabled"))]);
 }
 
 async fn overview(ctx: &Context) -> anyhow::Result<Output> {

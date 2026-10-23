@@ -13,6 +13,35 @@ use serde::Serialize;
 use tokio::sync::OnceCell;
 use zbus::zvariant::{DynamicDeserialize, DynamicType, OwnedValue};
 
+tokio::task_local! {
+    /// Commands and D-Bus calls made by the action running in this task.
+    static EXECUTED: std::cell::RefCell<Vec<String>>;
+}
+
+/// Runs `f`, collecting what it executes (see [`Context::run`] and
+/// [`Context::call`]).
+pub async fn logged<F: std::future::Future>(f: F) -> (F::Output, Vec<String>) {
+    EXECUTED
+        .scope(std::cell::RefCell::new(Vec::new()), async {
+            let out = f.await;
+            (out, EXECUTED.with(|l| l.take()))
+        })
+        .await
+}
+
+fn record(line: String) {
+    let _ = EXECUTED.try_with(|l| l.borrow_mut().push(line));
+}
+
+/// Quotes `s` for a POSIX shell when it needs it.
+pub fn shell_quote(s: &str) -> String {
+    if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_./:=@%+,".contains(c)) {
+        s.to_owned()
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
+}
+
 /// The openSUSE flavour we're running on; actions adapt to it.
 #[derive(Clone, Debug, Default)]
 pub struct Distro {
@@ -110,6 +139,10 @@ impl Context {
         R: for<'d> DynamicDeserialize<'d>,
     {
         let proxy = self.proxy(dest, path, iface).await?;
+        if interactive {
+            // Interactive calls are the changing ones; reads stay out of the log.
+            record(format!("D-Bus {iface}.{method} {}", serde_json::to_string(body).unwrap_or_default()));
+        }
         let flags = if interactive { zbus::proxy::MethodFlags::AllowInteractiveAuth.into() } else { Default::default() };
         let reply = proxy.call_with_flags::<_, B, R>(method, flags, body).await.map_err(dbus_error)?;
         reply.ok_or_else(|| anyhow!("{method}: no reply"))
@@ -169,6 +202,7 @@ impl Default for Context {
 
 async fn run_command(argv: &[&str], ok: &[i32]) -> Result<String> {
     let (prog, rest) = argv.split_first().ok_or_else(|| anyhow!("empty command"))?;
+    record(argv.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" "));
     let out = tokio::process::Command::new(prog)
         .args(rest)
         .env_clear()

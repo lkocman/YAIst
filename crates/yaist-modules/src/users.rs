@@ -2,6 +2,7 @@
 //! sudo policy uses for admin rights.
 
 use anyhow::{bail, Result};
+use yaist_core::shell_quote as sq;
 use yaist_core::{validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk, Table};
 
 const ADMIN_GROUP: &str = "wheel";
@@ -86,6 +87,28 @@ pub fn register(reg: &mut Registry) {
     });
 
     reg.action(DELETE, |ctx, args| async move { delete(&ctx, args.str("username"), args.bool("remove_home")).await });
+
+    reg.shell(LIST.id, |_, _| vec!["getent passwd".into(), format!("getent group {ADMIN_GROUP}")]);
+    reg.shell(CREATE.id, |a, _| {
+        let mut cmd = String::from("sudo useradd --create-home");
+        if let Some(n) = a.opt_str("full_name") {
+            cmd.push_str(&format!(" --comment {}", sq(n)));
+        }
+        if a.bool("admin") {
+            cmd.push_str(&format!(" --groups {ADMIN_GROUP}"));
+        }
+        let user = sq(a.str("username"));
+        vec![format!("{cmd} {user}"), format!("sudo passwd {user}")]
+    });
+    reg.shell(SET_ADMIN.id, |a, _| {
+        let user = sq(a.str("username"));
+        vec![if a.bool("admin") {
+            format!("sudo usermod --append --groups {ADMIN_GROUP} {user}")
+        } else {
+            format!("sudo gpasswd --delete {user} {ADMIN_GROUP}")
+        }]
+    });
+    reg.shell(DELETE.id, |a, _| vec![format!("sudo userdel{} {}", if a.bool("remove_home") { " --remove" } else { "" }, sq(a.str("username")))]);
 }
 
 struct User {

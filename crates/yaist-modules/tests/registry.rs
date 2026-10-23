@@ -70,3 +70,44 @@ fn changes_are_never_marked_read_only() {
         }
     }
 }
+
+#[test]
+fn every_action_teaches_its_terminal_command() {
+    // Plan cards and results show the equivalent command so users learn the
+    // tools underneath; an action without one is a gap in that.
+    let reg = yaist_modules::registry();
+    let distros = [
+        yaist_core::Distro { id: "opensuse-leap".into(), version: "16.0".into(), ..Default::default() },
+        yaist_core::Distro { id: "opensuse-tumbleweed".into(), rolling: true, ..Default::default() },
+        yaist_core::Distro { id: "opensuse-aeon".into(), rolling: true, transactional: true, ..Default::default() },
+    ];
+    for spec in reg.specs() {
+        // Fill required parameters with something valid-looking.
+        let mut raw = serde_json::Map::new();
+        for p in spec.params.iter().filter(|p| p.required) {
+            let v = match p.kind {
+                ParamKind::Bool => "true",
+                ParamKind::Integer => "1",
+                ParamKind::Choice(opts) => opts[0],
+                ParamKind::Text => match p.name {
+                    "port" => "8080",
+                    "number" => "42",
+                    "rule" => "8080/tcp",
+                    "url" => "https://example.org/repo",
+                    "timezone" => "UTC",
+                    "project" => "games",
+                    _ => "example",
+                },
+            };
+            raw.insert(p.name.into(), v.into());
+        }
+        let args = spec.validate(&raw).unwrap_or_else(|e| panic!("{}: sample arguments invalid: {e}", spec.id));
+        for d in &distros {
+            let cmds = reg.shell_for(spec.id, &args, d);
+            assert!(!cmds.is_empty(), "{} has no terminal equivalent", spec.id);
+            if spec.risk != Risk::Read {
+                assert!(cmds.iter().any(|c| c.starts_with("sudo ")), "{}: a change should show the sudo command", spec.id);
+            }
+        }
+    }
+}

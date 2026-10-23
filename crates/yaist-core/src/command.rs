@@ -13,6 +13,9 @@ pub enum Parsed {
 }
 
 pub fn parse(registry: &Registry, line: &str) -> Result<Parsed> {
+    if is_tool_command(line) {
+        return parse(registry, &translate(line)?);
+    }
     let line = line.trim().strip_prefix('/').ok_or_else(|| anyhow!("commands start with '/'"))?;
     let words = split_words(line)?;
     let mut it = words.into_iter();
@@ -74,6 +77,220 @@ pub fn format(spec: &ActionSpec, args: &Args) -> String {
         out.push_str(&quote(&text));
     }
     out
+}
+
+/// Tools whose familiar commands yAIst understands, so users can type what
+/// they know (or are learning) and still get a plan card.
+const TOOLS: &[&str] = &[
+    "zypper",
+    "systemctl",
+    "snapper",
+    "firewall-cmd",
+    "hostnamectl",
+    "timedatectl",
+    "setsebool",
+    "getsebool",
+    "sestatus",
+    "setenforce",
+    "useradd",
+    "userdel",
+];
+
+/// `zypper in fish`, `sudo systemctl restart sshd`, `/snapper list`…
+pub fn is_tool_command(line: &str) -> bool {
+    let mut words = line.trim().trim_start_matches('/').split_whitespace();
+    let first = match words.next() {
+        Some("sudo") => words.next(),
+        w => w,
+    };
+    first.is_some_and(|w| TOOLS.contains(&w))
+}
+
+/// Translates a familiar tool command into the matching `/command`.
+pub fn translate(line: &str) -> Result<String> {
+    let words = split_words(line.trim().trim_start_matches('/'))?;
+    let mut w: Vec<&str> = words.iter().map(String::as_str).collect();
+    if w.first() == Some(&"sudo") {
+        w.remove(0);
+    }
+    let (tool, rest) = w.split_first().ok_or_else(|| anyhow!("empty command"))?;
+    // Options with a value, as `--opt value` or `--opt=value`.
+    let opt =
+        |names: &[&str]| -> Option<String> {
+            rest.iter().enumerate().find_map(|(i, a)| {
+                names.iter().find_map(|n| {
+                    if *a == *n {
+                        rest.get(i + 1).map(|v| v.to_string())
+                    } else {
+                        a.strip_prefix(&format!("{n}=")).map(str::to_owned)
+                    }
+                })
+            })
+        };
+    let has = |names: &[&str]| rest.iter().any(|a| names.contains(a));
+    // Options that take the next word as their value, per tool.
+    let valued: &[&str] = match *tool {
+        "zypper" => &["--releasever", "-r", "--repo"],
+        "snapper" => &["-d", "--description", "-c", "--config"],
+        "useradd" => &["-c", "--comment", "-G", "--groups", "-s", "--shell"],
+        _ => &[],
+    };
+    let mut args: Vec<&str> = Vec::new();
+    let mut skip = false;
+    for a in rest {
+        if std::mem::take(&mut skip) {
+            continue;
+        }
+        if a.starts_with('-') {
+            skip = valued.contains(a);
+            continue;
+        }
+        args.push(a);
+    }
+    let (cmd, args) = args.split_first().map(|(c, a)| (*c, a.to_vec())).unwrap_or(("", Vec::new()));
+    let need = |n: usize, what: &str| -> Result<()> {
+        if args.len() < n {
+            bail!("`{tool} {cmd}` needs {what}");
+        }
+        Ok(())
+    };
+    let q = |s: &str| quote(s);
+    let joined = || quote(&args.join(" "));
+    let unknown = || anyhow!("yAIst doesn't know `{tool} {cmd}` yet; try /help");
+    Ok(match *tool {
+        "zypper" => match cmd {
+            "in" | "install" => {
+                need(1, "a package")?;
+                format!("/packages install {}", joined())
+            }
+            "rm" | "remove" => {
+                need(1, "a package")?;
+                format!("/packages remove {}", joined())
+            }
+            "se" | "search" => {
+                need(1, "a search term")?;
+                format!("/packages search {}", q(args[0]))
+            }
+            "if" | "info" => {
+                need(1, "a package")?;
+                format!("/packages info {}", q(args[0]))
+            }
+            "up" | "update" if args.is_empty() => "/packages update-system".into(),
+            "up" | "update" => format!("/packages update {}", joined()),
+            "lu" | "list-updates" => "/packages list-updates".into(),
+            "ref" | "refresh" => "/packages refresh".into(),
+            "dup" | "dist-upgrade" => match opt(&["--releasever"]) {
+                Some(v) => format!("/upgrade distribution version={}", q(&v)),
+                None => "/upgrade distribution".into(),
+            },
+            "lr" | "repos" => "/repos list".into(),
+            "ar" | "addrepo" => {
+                need(2, "a URL and an alias")?;
+                format!("/repos add {} {}", q(args[0]), q(args[1]))
+            }
+            "rr" | "removerepo" => {
+                need(1, "a repository alias")?;
+                format!("/repos remove {}", q(args[0]))
+            }
+            "mr" | "modifyrepo" if has(&["-e", "--enable"]) => format!("/repos enable {}", q(args.first().copied().unwrap_or(""))),
+            "mr" | "modifyrepo" if has(&["-d", "--disable"]) => format!("/repos disable {}", q(args.first().copied().unwrap_or(""))),
+            _ => return Err(unknown()),
+        },
+        "systemctl" => match cmd {
+            "" | "list-units" if has(&["--failed"]) || rest.contains(&"--state=failed") => "/services list state=failed".into(),
+            "" | "list-units" => "/services list state=running".into(),
+            "--failed" => "/services list state=failed".into(),
+            "status" | "start" | "stop" | "restart" => {
+                need(1, "a service")?;
+                format!("/services {cmd} {}", q(args[0]))
+            }
+            "enable" | "disable" => {
+                need(1, "a service")?;
+                format!("/services {cmd} {} now={}", q(args[0]), if has(&["--now"]) { "yes" } else { "no" })
+            }
+            _ => return Err(unknown()),
+        },
+        "snapper" => match cmd {
+            "" | "list" | "ls" => "/snapshots list".into(),
+            "create" => format!("/snapshots create {}", q(&opt(&["-d", "--description"]).unwrap_or_else(|| "manual snapshot".into()))),
+            "delete" | "remove" | "rm" => {
+                need(1, "a snapshot number")?;
+                format!("/snapshots delete {}", q(args[0]))
+            }
+            "rollback" => {
+                need(1, "a snapshot number")?;
+                format!("/snapshots rollback {}", q(args[0]))
+            }
+            "status" => {
+                need(1, "a range like 42..0")?;
+                format!("/snapshots changes {}", q(args[0].split("..").next().unwrap_or("")))
+            }
+            _ => return Err(unknown()),
+        },
+        "firewall-cmd" => {
+            let zone = opt(&["--zone"]).map(|z| format!(" zone={}", q(&z))).unwrap_or_default();
+            if let Some(p) = opt(&["--add-port"]) {
+                let (port, proto) = p.split_once('/').unwrap_or((&p, "tcp"));
+                format!("/firewall open-port {} {}{zone}", q(port), q(proto))
+            } else if let Some(svc) = opt(&["--add-service"]) {
+                format!("/firewall allow-service {}{zone}", q(&svc))
+            } else if let Some(rule) = opt(&["--remove-port", "--remove-service"]) {
+                format!("/firewall remove {}{zone}", q(&rule))
+            } else if has(&["--get-services"]) {
+                "/firewall available-services".into()
+            } else {
+                "/firewall overview".into()
+            }
+        }
+        "hostnamectl" => match cmd {
+            "set-hostname" | "hostname" if !args.is_empty() => format!("/system set-hostname {}", q(args[0])),
+            _ => "/system overview".into(),
+        },
+        "timedatectl" => match cmd {
+            "set-timezone" => {
+                need(1, "a time zone")?;
+                format!("/system set-timezone {}", q(args[0]))
+            }
+            "set-ntp" => {
+                need(1, "true or false")?;
+                format!("/system set-ntp {}", q(args[0]))
+            }
+            _ => "/system overview".into(),
+        },
+        "setsebool" => {
+            if args.len() < 2 && !cmd.is_empty() && args.is_empty() {
+                bail!("`setsebool` needs a boolean and on/off");
+            }
+            let value = args.first().copied().unwrap_or("");
+            format!("/selinux set-boolean {} {} persistent={}", q(cmd), q(value), if has(&["-P"]) { "yes" } else { "no" })
+        }
+        "getsebool" if !cmd.is_empty() => format!("/selinux booleans filter={}", q(cmd)),
+        "getsebool" => "/selinux booleans".into(),
+        "sestatus" => "/selinux status".into(),
+        "setenforce" => {
+            let mode = match cmd.to_ascii_lowercase().as_str() {
+                "1" | "enforcing" => "enforcing",
+                "0" | "permissive" => "permissive",
+                _ => bail!("`setenforce` takes 1/Enforcing or 0/Permissive"),
+            };
+            format!("/selinux set-mode {mode}")
+        }
+        "useradd" => {
+            if cmd.is_empty() {
+                bail!("`useradd` needs a user name");
+            }
+            let admin = opt(&["-G", "--groups"]).is_some_and(|g| g.split(',').any(|x| x == "wheel"));
+            let name = opt(&["-c", "--comment"]).map(|n| format!(" full_name={}", q(&n))).unwrap_or_default();
+            format!("/users create {}{name} admin={}", q(cmd), if admin { "yes" } else { "no" })
+        }
+        "userdel" => {
+            if cmd.is_empty() {
+                bail!("`userdel` needs a user name");
+            }
+            format!("/users delete {} remove_home={}", q(cmd), if has(&["-r", "--remove"]) { "yes" } else { "no" })
+        }
+        _ => return Err(unknown()),
+    })
 }
 
 fn quote(s: &str) -> String {
@@ -212,6 +429,38 @@ mod tests {
         raw.insert("port".into(), "80".into());
         raw.insert("command".into(), "rm -rf /".into());
         assert!(OPEN.validate(&raw).is_err());
+    }
+
+    #[test]
+    fn tool_commands_translate() {
+        let cases = [
+            ("zypper in fish", "/packages install fish"),
+            ("sudo zypper install fish htop", "/packages install \"fish htop\""),
+            ("/zypper se vim", "/packages search vim"),
+            ("zypper --releasever 16.1 dup", "/upgrade distribution version=16.1"),
+            ("sudo zypper -n --releasever=16.1 dup --allow-vendor-change", "/upgrade distribution version=16.1"),
+            ("zypper up", "/packages update-system"),
+            ("zypper ar https://example.org/repo games", "/repos add https://example.org/repo games"),
+            ("zypper mr -d games", "/repos disable games"),
+            ("systemctl restart sshd", "/services restart sshd"),
+            ("systemctl enable --now sshd", "/services enable sshd now=yes"),
+            ("systemctl --failed", "/services list state=failed"),
+            ("snapper create -d 'before tests'", "/snapshots create \"before tests\""),
+            ("snapper status 42..0", "/snapshots changes 42"),
+            ("firewall-cmd --zone=public --add-port=8080/tcp --permanent", "/firewall open-port 8080 tcp zone=public"),
+            ("firewall-cmd --add-service=https", "/firewall allow-service https"),
+            ("setsebool -P httpd_can_network_connect on", "/selinux set-boolean httpd_can_network_connect on persistent=yes"),
+            ("setenforce 0", "/selinux set-mode permissive"),
+            ("useradd -m -c 'Tom S' -G wheel tom", "/users create tom full_name=\"Tom S\" admin=yes"),
+            ("userdel -r tom", "/users delete tom remove_home=yes"),
+        ];
+        for (typed, expected) in cases {
+            assert!(is_tool_command(typed), "{typed}");
+            assert_eq!(translate(typed).unwrap(), expected, "{typed}");
+        }
+        assert!(!is_tool_command("install fish please"));
+        assert!(!is_tool_command("/packages install fish"));
+        assert!(translate("zypper frobnicate").is_err());
     }
 
     #[test]

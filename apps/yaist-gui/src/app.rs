@@ -518,9 +518,12 @@ impl App {
                     ui.label(RichText::new(format!("› {s}")).family(theme::mono()).size(13.0).color(t.ink_strong));
                 });
             }
-            Entry::AgentRan { command, ok } => {
+            Entry::AgentRan { command, shell, ok } => {
                 let (mark, color) = if *ok { ("✓", t.faint) } else { ("✗", t.bad) };
                 ui.label(RichText::new(format!("{mark} ran {command}")).family(theme::mono()).size(12.0).color(color));
+                for c in shell {
+                    ui.label(RichText::new(format!("  $ {c}")).family(theme::mono()).size(11.5).color(t.faint));
+                }
             }
             Entry::Assistant { text, elapsed } => {
                 ui.horizontal(|ui| {
@@ -532,8 +535,9 @@ impl App {
                 ui.label(RichText::new(text).size(14.0).color(t.ink));
             }
             Entry::Plan(p) => self.plan_card(ui, p),
-            Entry::Result { title, output } => {
+            Entry::Result { title, shell, output } => {
                 widgets::hud(ui, title, t.faint);
+                shell_block(ui, shell);
                 match output {
                     Output::Table(table) => compact_table(ui, table),
                     Output::Facts(f) => facts_grid(ui, f, 4.0),
@@ -583,6 +587,11 @@ impl App {
                     }
                 });
             }
+            if !p.shell.is_empty() {
+                ui.add_space(4.0);
+                widgets::hud(ui, "in a terminal", t.faint);
+                shell_block(ui, &p.shell);
+            }
             ui.add_space(4.0);
             ui.label(RichText::new(p.spec.description).size(12.5).color(t.muted));
             ui.add_space(8.0);
@@ -611,6 +620,14 @@ impl App {
                 PlanStatus::Done(m) => status_line(ui, "done", t.good, m, t.ink),
                 PlanStatus::Failed(m) => status_line(ui, "failed", t.bad, m, t.bad),
                 PlanStatus::Cancelled => status_line(ui, "cancelled", t.faint, "", t.faint),
+            }
+            if !p.executed.is_empty() {
+                ui.add_space(6.0);
+                ui.collapsing(RichText::new("WHAT YAIST RAN").family(theme::mono()).size(11.0).color(t.faint), |ui| {
+                    for c in &p.executed {
+                        ui.label(RichText::new(c).family(theme::mono()).size(11.5).color(t.muted));
+                    }
+                });
             }
         });
     }
@@ -683,6 +700,24 @@ impl App {
             self.form = None;
         }
     }
+}
+
+/// Terminal commands, one per line, with a Geeko-green prompt.
+fn shell_block(ui: &mut Ui, cmds: &[String]) {
+    if cmds.is_empty() {
+        return;
+    }
+    let t = Tokens::get(ui.ctx());
+    Frame::new().fill(t.sunken).inner_margin(Margin::symmetric(10, 7)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        for c in cmds {
+            let mut job = egui::text::LayoutJob::default();
+            let font = FontId::new(12.5, theme::mono());
+            job.append("$ ", 0.0, egui::TextFormat { font_id: font.clone(), color: t.accent, ..Default::default() });
+            job.append(c, 0.0, egui::TextFormat { font_id: font, color: t.ink_strong, ..Default::default() });
+            ui.label(job);
+        }
+    });
 }
 
 fn status_line(ui: &mut Ui, label: &str, color: Color32, msg: &str, msg_color: Color32) {

@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use yaist_core::shell_quote as sq;
 use yaist_core::{validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk, Table};
 use zbus::zvariant::OwnedObjectPath;
 
@@ -122,6 +123,22 @@ pub fn register(reg: &mut Registry) {
         }
         Ok(Output::Done(format!("Removed {rule} from zone {zone}")))
     });
+
+    reg.shell(OVERVIEW.id, |_, _| vec!["sudo firewall-cmd --list-all-zones".into()]);
+    reg.shell(AVAILABLE.id, |_, _| vec!["firewall-cmd --get-services".into()]);
+    reg.shell(OPEN_PORT.id, |a, _| firewall_cmd(a.opt_str("zone"), &format!("--add-port={}/{}", sq(a.str("port")), a.str("protocol"))));
+    reg.shell(ALLOW_SERVICE.id, |a, _| firewall_cmd(a.opt_str("zone"), &format!("--add-service={}", sq(a.str("service")))));
+    reg.shell(REMOVE.id, |a, _| {
+        let rule = a.str("rule");
+        let op = if rule.contains('/') { format!("--remove-port={}", sq(rule)) } else { format!("--remove-service={}", sq(rule)) };
+        firewall_cmd(a.opt_str("zone"), &op)
+    });
+}
+
+/// `firewall-cmd` for the running and the permanent configuration.
+fn firewall_cmd(zone: Option<&str>, op: &str) -> Vec<String> {
+    let zone = zone.filter(|z| *z != "default").map(|z| format!(" --zone={}", sq(z))).unwrap_or_default();
+    vec![format!("sudo firewall-cmd{zone} {op}"), format!("sudo firewall-cmd{zone} --permanent {op}")]
 }
 
 /// Adding what is already there, or removing what isn't, is not a failure.

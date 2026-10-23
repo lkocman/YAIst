@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Result};
 use serde_json::Value;
+use yaist_core::shell_quote as sq;
 use yaist_core::{validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk, Table};
 
 use crate::{helper, zypper};
@@ -41,6 +42,33 @@ pub fn register(reg: &mut Registry) {
     });
     reg.action(TARGETS, |ctx, _| async move { targets(&ctx).await });
     reg.action(DISTRIBUTION, |ctx, args| async move { upgrade(&ctx, args.opt_str("version"), args.bool("disable_third_party")).await });
+
+    reg.shell(TARGETS.id, |_, _| vec!["cat /etc/os-release".into(), "zypper repos --uri".into()]);
+    reg.shell(DISTRIBUTION.id, |a, d| {
+        if d.rolling {
+            return if d.transactional {
+                vec!["sudo transactional-update dup".into(), "sudo reboot".into()]
+            } else {
+                vec!["sudo zypper dup".into(), "sudo reboot".into()]
+            };
+        }
+        let v = sq(a.opt_str("version").unwrap_or("<version>"));
+        let mut cmds = Vec::new();
+        if a.bool("disable_third_party") {
+            cmds.push(format!("sudo zypper modifyrepo --disable <third-party repos pinned to {}>", d.version));
+        }
+        cmds.extend([
+            "sudo zypper install --force-resolution openSUSE-repos-Leap".into(),
+            "sudo zypper refresh-services".into(),
+            format!("sudo zypper addrepo --refresh https://download.opensuse.org/distribution/leap/{v}/repo/oss tmp"),
+            "sudo zypper install --repo tmp --from tmp --force-resolution openSUSE-repos-Leap".into(),
+            "sudo zypper removerepo tmp".into(),
+            "sudo zypper refresh-services".into(),
+            format!("sudo zypper --releasever {v} dup --force-resolution --allow-vendor-change --download-in-advance"),
+            "sudo reboot".into(),
+        ]);
+        cmds
+    });
 }
 
 fn is_leap(ctx: &Context) -> bool {

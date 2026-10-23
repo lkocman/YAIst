@@ -39,6 +39,10 @@ pub struct Plan {
     pub spec: ActionSpec,
     pub args: Args,
     pub command: String,
+    /// The same change done by hand in a terminal, for learning.
+    pub shell: Vec<String>,
+    /// What yAIst actually ran (commands and D-Bus calls), once done.
+    pub executed: Vec<String>,
     pub status: PlanStatus,
     pub from_agent: bool,
 }
@@ -51,6 +55,7 @@ pub enum Entry {
     /// A read action the agent ran on its own.
     AgentRan {
         command: String,
+        shell: Vec<String>,
         ok: bool,
     },
     Assistant {
@@ -60,6 +65,8 @@ pub enum Entry {
     Plan(Plan),
     Result {
         title: String,
+        /// The terminal equivalent of what produced this.
+        shell: Vec<String>,
         output: Output,
     },
     Error(String),

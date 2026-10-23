@@ -4,6 +4,7 @@
 
 use anyhow::{anyhow, Result};
 use serde_json::Value;
+use yaist_core::shell_quote as sq;
 use yaist_core::{validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk, Table};
 
 use crate::helper;
@@ -91,6 +92,18 @@ pub fn register(reg: &mut Registry) {
     reg.action(ROLLBACK, |ctx, args| async move {
         helper::run(&ctx, &["snapper-rollback", args.str("number")]).await?;
         Ok(Output::Done(format!("Rolled back to snapshot {}; reboot to boot into it", args.str("number"))))
+    });
+
+    reg.shell(LIST.id, |_, _| vec!["sudo snapper list".into()]);
+    reg.shell(CHANGES.id, |a, _| vec![format!("sudo snapper status {}..0", a.str("number"))]);
+    reg.shell(CREATE.id, |a, _| vec![format!("sudo snapper create --description {}", sq(a.str("description")))]);
+    reg.shell(DELETE.id, |a, _| vec![format!("sudo snapper delete {}", a.str("number"))]);
+    reg.shell(ROLLBACK.id, |a, d| {
+        if d.transactional {
+            vec![format!("sudo transactional-update rollback {}", a.str("number")), "sudo reboot".into()]
+        } else {
+            vec![format!("sudo snapper rollback {}", a.str("number")), "sudo reboot".into()]
+        }
     });
 }
 

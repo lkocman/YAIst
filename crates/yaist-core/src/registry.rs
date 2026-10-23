@@ -5,10 +5,14 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 
-use crate::{ActionSpec, Args, Context, Output};
+use crate::{ActionSpec, Args, Context, Distro, Output};
 
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 type Handler = Arc<dyn Fn(Arc<Context>, Args) -> BoxFuture<Result<Output>> + Send + Sync>;
+
+/// The terminal commands an action corresponds to, for teaching: shown on
+/// plan cards and results so users learn the tools underneath.
+pub type ShellFn = fn(&Args, &Distro) -> Vec<String>;
 
 /// A module: one entry in the sidebar, one panel.
 #[derive(Clone, Copy, Debug)]
@@ -34,6 +38,7 @@ pub struct Registry {
     pub modules: Vec<ModuleSpec>,
     actions: BTreeMap<&'static str, Action>,
     order: Vec<&'static str>,
+    shell: BTreeMap<&'static str, ShellFn>,
 }
 
 impl Registry {
@@ -51,6 +56,16 @@ impl Registry {
         self.actions.insert(spec.id, Action { spec, handler });
     }
 
+    /// Registers the terminal equivalent of an action.
+    pub fn shell(&mut self, id: &'static str, f: ShellFn) {
+        self.shell.insert(id, f);
+    }
+
+    /// The terminal commands for `id` with `args`, empty when none is known.
+    pub fn shell_for(&self, id: &str, args: &Args, distro: &Distro) -> Vec<String> {
+        self.shell.get(id).map(|f| f(args, distro)).unwrap_or_default()
+    }
+
     pub fn get(&self, id: &str) -> Option<&ActionSpec> {
         self.actions.get(id).map(|a| &a.spec)
     }
@@ -66,6 +81,12 @@ impl Registry {
 
     pub fn find_module(&self, id: &str) -> Option<&ModuleSpec> {
         self.modules.iter().find(|m| m.id == id)
+    }
+
+    /// Runs an action and returns, with its result, every command and D-Bus
+    /// call it made, so the user sees exactly what was executed.
+    pub async fn run_logged(&self, ctx: Arc<Context>, id: &str, args: Args) -> (Result<Output>, Vec<String>) {
+        crate::context::logged(self.run(ctx, id, args)).await
     }
 
     /// Runs an action with already validated arguments.

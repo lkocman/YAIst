@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
+use yaist_core::shell_quote as sq;
 use yaist_core::{last_lines, validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk, Table};
 use zbus::zvariant::OwnedObjectPath;
 
@@ -106,6 +107,21 @@ pub fn register(reg: &mut Registry) {
         }
         Ok(Output::Done(format!("Disabled {u}")))
     });
+
+    reg.shell(LIST.id, |a, _| {
+        vec![match a.str("state") {
+            "running" => "systemctl list-units --type=service --state=running".into(),
+            "failed" => "systemctl list-units --type=service --state=failed".into(),
+            "enabled" => "systemctl list-unit-files --type=service --state=enabled".into(),
+            _ => "systemctl list-units --type=service --all".into(),
+        }]
+    });
+    reg.shell(STATUS.id, |a, _| vec![format!("systemctl status {}", sq(&unit(a.str("unit"))))]);
+    reg.shell(START.id, |a, _| vec![format!("sudo systemctl start {}", sq(&unit(a.str("unit"))))]);
+    reg.shell(STOP.id, |a, _| vec![format!("sudo systemctl stop {}", sq(&unit(a.str("unit"))))]);
+    reg.shell(RESTART.id, |a, _| vec![format!("sudo systemctl restart {}", sq(&unit(a.str("unit"))))]);
+    reg.shell(ENABLE.id, |a, _| vec![format!("sudo systemctl enable{} {}", if a.bool("now") { " --now" } else { "" }, sq(&unit(a.str("unit"))))]);
+    reg.shell(DISABLE.id, |a, _| vec![format!("sudo systemctl disable{} {}", if a.bool("now") { " --now" } else { "" }, sq(&unit(a.str("unit"))))]);
 }
 
 /// `sshd` → `sshd.service`.

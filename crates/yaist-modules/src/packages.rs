@@ -3,6 +3,7 @@
 //! rolling releases, `transactional-update` on immutable variants.
 
 use anyhow::Result;
+use yaist_core::shell_quote as sq;
 use yaist_core::{validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk, Table};
 
 use crate::zypper;
@@ -117,6 +118,30 @@ pub fn register(reg: &mut Registry) {
         zypper::change(&ctx, &["refresh"]).await?;
         Ok(Output::Done("Repository metadata refreshed".into()))
     });
+
+    reg.shell(UPDATES.id, |_, _| vec!["zypper list-updates".into()]);
+    reg.shell(SEARCH.id, |a, _| vec![format!("zypper search {}", sq(a.str("query")))]);
+    reg.shell(INFO.id, |a, _| vec![format!("zypper info {}", sq(a.str("packages")))]);
+    reg.shell(INSTALL.id, |a, d| pkg_cmd("install", a.str("packages"), d));
+    reg.shell(UPDATE.id, |a, d| pkg_cmd("update", a.str("packages"), d));
+    reg.shell(REMOVE.id, |a, d| pkg_cmd("remove", a.str("packages"), d));
+    reg.shell(UPDATE_SYSTEM.id, |_, d| match (d.transactional, d.rolling) {
+        (true, true) => vec!["sudo transactional-update dup".into(), "sudo reboot".into()],
+        (true, false) => vec!["sudo transactional-update up".into(), "sudo reboot".into()],
+        (false, true) => vec!["sudo zypper dup".into()],
+        (false, false) => vec!["sudo zypper update".into()],
+    });
+    reg.shell(REFRESH.id, |_, _| vec!["sudo zypper refresh".into()]);
+}
+
+/// `zypper <op> <packages>`, or its transactional-update form.
+fn pkg_cmd(op: &str, packages: &str, d: &yaist_core::Distro) -> Vec<String> {
+    let pkgs: Vec<String> = packages.split_whitespace().map(sq).collect();
+    if d.transactional {
+        vec![format!("sudo transactional-update pkg {op} {}", pkgs.join(" ")), "sudo reboot".into()]
+    } else {
+        vec![format!("sudo zypper {op} {}", pkgs.join(" "))]
+    }
 }
 
 async fn pkg_op(ctx: &Context, op: &str, pkgs: &[&str]) -> Result<String> {

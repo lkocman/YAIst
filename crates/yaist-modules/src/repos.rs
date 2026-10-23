@@ -1,6 +1,7 @@
 //! Repositories, including community repositories from the Open Build Service.
 
 use anyhow::Result;
+use yaist_core::shell_quote as sq;
 use yaist_core::{validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk, Table};
 
 use crate::zypper;
@@ -64,7 +65,7 @@ pub fn register(reg: &mut Registry) {
 
     reg.action(ADD_OBS, |ctx, args| async move {
         let project = args.str("project");
-        let url = format!("https://download.opensuse.org/repositories/{}/{}/", project.replace(':', ":/"), ctx.distro.obs_repo_name());
+        let url = obs_url(project, &ctx.distro);
         let alias = args.opt_str("alias").map(str::to_owned).unwrap_or_else(|| project.replace(':', "_"));
         add(&ctx, &url, &alias).await
     });
@@ -81,6 +82,29 @@ pub fn register(reg: &mut Registry) {
         zypper::change(&ctx, &["removerepo", "--", args.str("alias")]).await?;
         Ok(Output::Done(format!("Removed {}", args.str("alias"))))
     });
+
+    reg.shell(LIST.id, |_, _| vec!["zypper repos --uri".into()]);
+    reg.shell(ADD.id, |a, _| add_cmds(a.str("url"), a.str("alias")));
+    reg.shell(ADD_OBS.id, |a, d| {
+        let project = a.str("project");
+        let alias = a.opt_str("alias").map(str::to_owned).unwrap_or_else(|| project.replace(':', "_"));
+        add_cmds(&obs_url(project, d), &alias)
+    });
+    reg.shell(ENABLE.id, |a, _| vec![format!("sudo zypper modifyrepo --enable {}", sq(a.str("alias")))]);
+    reg.shell(DISABLE.id, |a, _| vec![format!("sudo zypper modifyrepo --disable {}", sq(a.str("alias")))]);
+    reg.shell(REMOVE.id, |a, _| vec![format!("sudo zypper removerepo {}", sq(a.str("alias")))]);
+}
+
+/// The OBS repository URL for `project` on this distribution.
+fn obs_url(project: &str, d: &yaist_core::Distro) -> String {
+    format!("https://download.opensuse.org/repositories/{}/{}/", project.replace(':', ":/"), d.obs_repo_name())
+}
+
+fn add_cmds(url: &str, alias: &str) -> Vec<String> {
+    vec![
+        format!("sudo zypper addrepo --refresh {} {}", sq(url), sq(alias)),
+        format!("sudo zypper --gpg-auto-import-keys refresh --repo {}", sq(alias)),
+    ]
 }
 
 /// Adds the repository, then refreshes it once to import its key. A

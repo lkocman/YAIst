@@ -260,7 +260,9 @@ impl Jobs {
             self.sh.update(|s| s.conversation.clear());
             return;
         }
-        if text.starts_with('/') {
+        // Familiar tool commands (zypper in fish, systemctl restart sshd) are
+        // commands too, with or without the slash.
+        if text.starts_with('/') || command::is_tool_command(text) {
             self.sh.push(Entry::Command(text.to_owned()));
             match command::parse(&self.sh.reg, text) {
                 Ok(command::Parsed::Help(module)) => self.sh.push(Entry::Notice(command::help(&self.sh.reg, module.as_deref()))),
@@ -289,21 +291,22 @@ impl Jobs {
             }
         };
         let cmdline = command::format(&spec, &args);
+        let shell = self.sh.reg.shell_for(spec.id, &args, &self.sh.ctx.distro);
         if spec.risk == Risk::Read {
             self.sh.busy(Some(format!("Running {}…", spec.title)));
             let result = self.sh.reg.run(self.sh.ctx.clone(), spec.id, args).await;
             self.sh.busy(None);
             return match (result, call_id.is_some()) {
                 (Ok(out), true) => {
-                    self.sh.push(Entry::AgentRan { command: cmdline, ok: true });
+                    self.sh.push(Entry::AgentRan { command: cmdline, shell, ok: true });
                     Some(out.to_llm_text(40))
                 }
                 (Err(e), true) => {
-                    self.sh.push(Entry::AgentRan { command: cmdline, ok: false });
+                    self.sh.push(Entry::AgentRan { command: cmdline, shell, ok: false });
                     Some(format!("Error: {e:#}"))
                 }
                 (Ok(out), false) => {
-                    self.sh.push(Entry::Result { title: spec.title.to_owned(), output: out });
+                    self.sh.push(Entry::Result { title: spec.title.to_owned(), shell, output: out });
                     None
                 }
                 (Err(e), false) => {
@@ -319,7 +322,7 @@ impl Jobs {
             self.call_ids.insert(id, c);
         }
         self.pending.push_back(id);
-        self.sh.push(Entry::Plan(Plan { id, spec, args, command: cmdline, status: PlanStatus::Pending, from_agent }));
+        self.sh.push(Entry::Plan(Plan { id, spec, args, command: cmdline, shell, executed: Vec::new(), status: PlanStatus::Pending, from_agent }));
         self.sh.focus_module(spec.module());
         None
     }
@@ -381,7 +384,7 @@ impl Jobs {
         };
         self.pending.retain(|&p| p != id);
         self.sh.busy(Some(format!("{}…", spec.title)));
-        let result = self.sh.reg.run(self.sh.ctx.clone(), spec.id, args).await;
+        let (result, executed) = self.sh.reg.run_logged(self.sh.ctx.clone(), spec.id, args).await;
         self.sh.busy(None);
         let (status, note) = match result {
             Ok(out) => {
@@ -393,6 +396,7 @@ impl Jobs {
         self.sh.update(|s| {
             if let Some(p) = s.plan_mut(id) {
                 p.status = status;
+                p.executed = executed;
             }
         });
         if let Some(call) = self.call_ids.remove(&id) {

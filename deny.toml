@@ -29,3 +29,9 @@ multiple-versions = "allow"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+
+[advisories]
+# Vulnerabilities always fail. "Unmaintained" notices only count for crates we
+# depend on directly; transitive ones (paste via ratatui, zvariant via zbus)
+# are for those upstreams to replace.
+unmaintained = "workspace"

@@ -678,10 +678,15 @@ impl App {
                 Span::styled(" › ", self.style(t.faint)),
                 Span::styled(s.clone(), self.style(t.ink_strong).add_modifier(Modifier::BOLD)),
             ])),
-            Entry::AgentRan { command, ok } => out.push(Line::from(vec![
-                Span::styled(if *ok { "   ✓ ran " } else { "   ✗ ran " }, self.style(if *ok { t.faint } else { t.bad })),
-                Span::styled(command.clone(), self.style(t.faint)),
-            ])),
+            Entry::AgentRan { command, shell, ok } => {
+                out.push(Line::from(vec![
+                    Span::styled(if *ok { "   ✓ ran " } else { "   ✗ ran " }, self.style(if *ok { t.faint } else { t.bad })),
+                    Span::styled(command.clone(), self.style(t.faint)),
+                ]));
+                for c in shell {
+                    out.push(Line::from(Span::styled(clip(&format!("     $ {c}"), width), self.style(t.faint))));
+                }
+            }
             Entry::Assistant { text: s, elapsed } => {
                 out.push(Line::from(vec![
                     Span::styled(" y", self.style(t.ink_strong).add_modifier(Modifier::BOLD)),
@@ -710,6 +715,16 @@ impl App {
                         Span::styled(v, self.style(t.ink)),
                     ]));
                 }
+                if !p.shell.is_empty() {
+                    out.push(Line::from(vec![Span::styled(" │ ", self.style(risk)), self.hud("in a terminal", t.faint)]));
+                    for c in &p.shell {
+                        out.push(Line::from(vec![
+                            Span::styled(" │ ", self.style(risk)),
+                            Span::styled("$ ", self.style(t.accent)),
+                            Span::styled(clip(c, width.saturating_sub(5)), self.style(t.ink_strong)),
+                        ]));
+                    }
+                }
                 for l in wrap(p.spec.description, width.saturating_sub(3)) {
                     out.push(Line::from(vec![Span::styled(" │ ", self.style(risk)), Span::styled(l, self.style(t.muted))]));
                 }
@@ -732,9 +747,21 @@ impl App {
                     PlanStatus::Cancelled => Line::from(vec![Span::styled(" └ ", self.style(t.faint)), self.badge("cancelled", t.faint)]),
                 };
                 out.push(status);
+                if !p.executed.is_empty() {
+                    out.push(Line::from(vec![Span::raw("   "), self.hud("executed", t.faint)]));
+                    for c in &p.executed {
+                        out.push(Line::from(Span::styled(clip(&format!("   {c}"), width), self.style(t.faint))));
+                    }
+                }
             }
-            Entry::Result { title, output } => {
+            Entry::Result { title, shell, output } => {
                 out.push(Line::from(vec![Span::raw(" "), self.hud(title, t.faint)]));
+                for c in shell {
+                    out.push(Line::from(vec![
+                        Span::styled(" $ ", self.style(t.accent)),
+                        Span::styled(clip(c, width.saturating_sub(3)), self.style(t.muted)),
+                    ]));
+                }
                 match output {
                     Output::Table(table) => {
                         let widths: Vec<usize> = (0..table.columns.len())

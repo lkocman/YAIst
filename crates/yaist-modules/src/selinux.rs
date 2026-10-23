@@ -2,6 +2,7 @@
 //! journal; changes go through setsebool/setenforce as root.
 
 use anyhow::{bail, Result};
+use yaist_core::shell_quote as sq;
 use yaist_core::{validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk, Table};
 
 const SELINUXFS: &str = "/sys/fs/selinux";
@@ -86,6 +87,20 @@ pub fn register(reg: &mut Registry) {
         ctx.run_privileged(&["/usr/sbin/setenforce", if mode == "enforcing" { "1" } else { "0" }]).await?;
         Ok(Output::Done(format!("SELinux is now {mode} (until reboot)")))
     });
+
+    reg.shell(BOOLEANS.id, |a, _| {
+        vec![match a.opt_str("filter") {
+            Some(f) => format!("getsebool -a | grep {}", sq(f)),
+            None => "getsebool -a".into(),
+        }]
+    });
+    reg.shell(STATUS.id, |_, _| vec!["sestatus".into()]);
+    reg.shell(DENIALS.id, |_, _| vec!["sudo ausearch --message avc --start recent".into()]);
+    reg.shell(SET_BOOLEAN.id, |a, _| {
+        let p = if a.bool("persistent") { " -P" } else { "" };
+        vec![format!("sudo setsebool{p} {} {}", sq(a.str("boolean")), if a.bool("value") { "on" } else { "off" })]
+    });
+    reg.shell(SET_MODE.id, |a, _| vec![format!("sudo setenforce {}", if a.str("mode") == "enforcing" { "1" } else { "0" })]);
 }
 
 fn enabled() -> bool {
