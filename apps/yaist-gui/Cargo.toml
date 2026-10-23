@@ -1,0 +1,21 @@
+[package]
+name = "yaist-gui"
+description = "yAIst desktop client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+yaist-core = { workspace = true }
+yaist-ui = { workspace = true }
+serde_json = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }
+
+[features]
+default = ["bundled-fonts"]
+# Embed Inter, Archivo and Geist Mono (OFL-1.1) in the binary. Without it the
+# fonts are read at runtime from $YAIST_FONT_DIR or /usr/share/yaist/fonts, so
+# a distribution package can ship or symlink them instead.
+bundled-fonts = []

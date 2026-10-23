@@ -1,0 +1,114 @@
+//! Hostname, time zone, time sync and an overview of the machine, via
+//! systemd's hostnamed and timedated.
+
+use yaist_core::{validate, ActionSpec, Context, ModuleSpec, Output, Param, Registry, Risk};
+
+const HOSTNAME1: &str = "org.freedesktop.hostname1";
+const HOSTNAME1_PATH: &str = "/org/freedesktop/hostname1";
+const TIMEDATE1: &str = "org.freedesktop.timedate1";
+const TIMEDATE1_PATH: &str = "/org/freedesktop/timedate1";
+
+const OVERVIEW: ActionSpec = ActionSpec {
+    id: "system.overview",
+    title: "Overview",
+    description: "Show hostname, operating system, kernel, time zone, uptime, memory and security module.",
+    risk: Risk::Read,
+    params: &[],
+};
+
+const SET_HOSTNAME: ActionSpec = ActionSpec {
+    id: "system.set_hostname",
+    title: "Set hostname",
+    description: "Set the machine's static hostname.",
+    risk: Risk::Change,
+    params: &[Param::text("hostname", "New hostname, e.g. workstation").check(validate::hostname)],
+};
+
+const SET_TIMEZONE: ActionSpec = ActionSpec {
+    id: "system.set_timezone",
+    title: "Set time zone",
+    description: "Set the system time zone (an IANA zone such as Europe/Prague or America/New_York).",
+    risk: Risk::Change,
+    params: &[Param::text("timezone", "IANA time zone, e.g. Europe/Prague").check(validate::timezone)],
+};
+
+const SET_NTP: ActionSpec = ActionSpec {
+    id: "system.set_ntp",
+    title: "Network time",
+    description: "Turn automatic time synchronisation (NTP) on or off.",
+    risk: Risk::Change,
+    params: &[Param::boolean("enabled", "Synchronise the clock over the network").default("true")],
+};
+
+pub fn register(reg: &mut Registry) {
+    reg.module(ModuleSpec { id: "system", title: "System", tagline: "Hostname, time and overview", overview: OVERVIEW.id, row_actions: &[] });
+
+    reg.action(OVERVIEW, |ctx, _| async move { overview(&ctx).await });
+
+    reg.action(SET_HOSTNAME, |ctx, args| async move {
+        let name = args.str("hostname").to_owned();
+        ctx.call::<_, ()>(HOSTNAME1, HOSTNAME1_PATH, HOSTNAME1, "SetStaticHostname", &(name.as_str(), true), true).await?;
+        Ok(Output::Done(format!("Hostname set to {name}")))
+    });
+
+    reg.action(SET_TIMEZONE, |ctx, args| async move {
+        let tz = args.str("timezone").to_owned();
+        ctx.call::<_, ()>(TIMEDATE1, TIMEDATE1_PATH, TIMEDATE1, "SetTimezone", &(tz.as_str(), true), true).await?;
+        Ok(Output::Done(format!("Time zone set to {tz}")))
+    });
+
+    reg.action(SET_NTP, |ctx, args| async move {
+        let on = args.bool("enabled");
+        ctx.call::<_, ()>(TIMEDATE1, TIMEDATE1_PATH, TIMEDATE1, "SetNTP", &(on, true), true).await?;
+        Ok(Output::Done(format!("Network time synchronisation turned {}", if on { "on" } else { "off" })))
+    });
+}
+
+async fn overview(ctx: &Context) -> anyhow::Result<Output> {
+    let host: String = ctx.property(HOSTNAME1, HOSTNAME1_PATH, HOSTNAME1, "Hostname").await.unwrap_or_else(|_| read_trim("/proc/sys/kernel/hostname"));
+    let kernel: String = ctx.property(HOSTNAME1, HOSTNAME1_PATH, HOSTNAME1, "KernelRelease").await.unwrap_or_else(|_| read_trim("/proc/sys/kernel/osrelease"));
+    let tz: String = ctx.property(TIMEDATE1, TIMEDATE1_PATH, TIMEDATE1, "Timezone").await.unwrap_or_default();
+    let ntp: bool = ctx.property(TIMEDATE1, TIMEDATE1_PATH, TIMEDATE1, "NTP").await.unwrap_or(false);
+    let synced: bool = ctx.property(TIMEDATE1, TIMEDATE1_PATH, TIMEDATE1, "NTPSynchronized").await.unwrap_or(false);
+
+    let d = &ctx.distro;
+    let updates = if d.transactional {
+        "transactional-update (reboot to apply)"
+    } else if d.rolling {
+        "rolling: zypper dup"
+    } else {
+        "zypper update / patch"
+    };
+    Ok(Output::Facts(vec![
+        ("Hostname".into(), host),
+        ("Operating system".into(), if d.pretty.is_empty() { d.id.clone() } else { d.pretty.clone() }),
+        ("Kernel".into(), kernel),
+        ("Update model".into(), updates.into()),
+        ("Time zone".into(), tz),
+        ("Network time".into(), format!("{}{}", if ntp { "on" } else { "off" }, if synced { ", synchronised" } else { "" })),
+        ("Uptime".into(), uptime()),
+        ("Memory".into(), memory()),
+        ("Security module".into(), crate::selinux::lsm_summary()),
+    ]))
+}
+
+fn read_trim(path: &str) -> String {
+    std::fs::read_to_string(path).unwrap_or_default().trim().to_owned()
+}
+
+fn uptime() -> String {
+    let secs = read_trim("/proc/uptime").split('.').next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+    let (d, h, m) = (secs / 86400, secs % 86400 / 3600, secs % 3600 / 60);
+    if d > 0 { format!("{d} d {h} h {m} min") } else { format!("{h} h {m} min") }
+}
+
+fn memory() -> String {
+    let info = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    let kb = |key: &str| {
+        info.lines().find(|l| l.starts_with(key)).and_then(|l| l.split_whitespace().nth(1)).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0)
+    };
+    let gib = |k: f64| k / 1024.0 / 1024.0;
+    let total = kb("MemTotal:");
+    let avail = kb("MemAvailable:");
+    format!("{:.1} GiB used of {:.1} GiB", gib(total - avail), gib(total))
+}

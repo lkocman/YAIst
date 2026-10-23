@@ -1,0 +1,15 @@
+[package]
+name = "yaist-modules"
+description = "yAIst system modules: system, users, services, firewall, SELinux, packages, repositories"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+yaist-core = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+zbus = { workspace = true }
+roxmltree = { workspace = true }

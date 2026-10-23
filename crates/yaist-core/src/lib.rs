@@ -1,0 +1,16 @@
+//! yAIst core: the action model every client shares.
+//!
+//! An action is defined once ([`ActionSpec`]) and appears three ways: as an
+//! LLM tool, as a panel button with a generated form, and as a `/command`.
+
+mod action;
+pub mod command;
+mod context;
+mod output;
+mod registry;
+pub mod validate;
+
+pub use action::{ActionSpec, Args, Param, ParamKind, Risk, Validator};
+pub use context::{last_lines, Context, Distro};
+pub use output::{Column, Output, Table};
+pub use registry::{BoxFuture, ModuleSpec, Registry};

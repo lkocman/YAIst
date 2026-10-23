@@ -1,0 +1,423 @@
+//! The backend behind every client: owns the registry, the agent and the
+//! shared [`State`]. Clients send [`Cmd`]s and render the state.
+
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
+
+use serde_json::{Map, Value};
+use tokio::sync::mpsc;
+use yaist_agent::{action_id, Agent, LlmClient, LlmConfig};
+use yaist_core::{command, ActionSpec, Context, Registry, Risk};
+
+use crate::state::{Entry, LlmStatus, ModuleView, Panel, Plan, PlanStatus, State};
+
+/// How many tool-calling rounds one request may take before we stop it.
+const MAX_ROUNDS: usize = 5;
+
+pub enum Cmd {
+    /// A line from the input prompt: a `/command` or plain language.
+    Submit(String),
+    /// A panel button or form: run (reads) or propose (changes) an action.
+    Propose { action: &'static str, raw: Map<String, Value> },
+    Confirm(u64),
+    Cancel(u64),
+    /// Reload a module's panel.
+    Refresh(usize),
+}
+
+#[derive(Clone)]
+struct Shared {
+    reg: Arc<Registry>,
+    ctx: Arc<Context>,
+    state: Arc<Mutex<State>>,
+    notify: Arc<dyn Fn() + Send + Sync>,
+    /// Headless sessions (`yaist ask`) load no panels: a panel load can ask
+    /// polkit, and nobody is looking at it.
+    panels: bool,
+}
+
+impl Shared {
+    fn update<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
+        let r = f(&mut self.state.lock().unwrap_or_else(|e| e.into_inner()));
+        (self.notify)();
+        r
+    }
+
+    fn push(&self, entry: Entry) {
+        self.update(|s| s.conversation.push(entry));
+    }
+
+    fn busy(&self, what: Option<String>) {
+        self.update(|s| s.busy = what);
+    }
+
+    fn refresh(&self, index: usize) {
+        if !self.panels {
+            return;
+        }
+        let sh = self.clone();
+        tokio::spawn(async move {
+            let Some(spec) = sh.reg.modules.get(index).copied() else { return };
+            sh.update(|s| s.modules[index].panel = Panel::Loading);
+            let result = match sh.reg.get(spec.overview).map(|a| a.validate(&Map::new())) {
+                Some(Ok(args)) => sh.reg.run(sh.ctx.clone(), spec.overview, args).await,
+                Some(Err(e)) => Err(e),
+                None => Err(anyhow::anyhow!("module {} has no overview action", spec.id)),
+            };
+            sh.update(|s| {
+                s.modules[index].panel = match result {
+                    Ok(out) => Panel::Ready(out),
+                    Err(e) => Panel::Failed(format!("{e:#}")),
+                }
+            });
+        });
+    }
+
+    /// Brings a module's panel forward, as after an action from the conversation.
+    fn focus_module(&self, module: &str) {
+        if let Some(i) = self.update(|s| {
+            let i = s.module_index(module)?;
+            s.selected = i;
+            Some(i)
+        }) {
+            self.refresh(i);
+        }
+    }
+}
+
+pub struct Session {
+    state: Arc<Mutex<State>>,
+    tx: mpsc::UnboundedSender<Cmd>,
+    pub registry: Arc<Registry>,
+    _runtime: tokio::runtime::Runtime,
+}
+
+impl Session {
+    /// Starts the backend. `notify` is called whenever the state changes, so a
+    /// GUI can schedule a repaint.
+    pub fn start(notify: impl Fn() + Send + Sync + 'static) -> Self {
+        Self::start_with(notify, true)
+    }
+
+    /// A session without panels, for scripted use.
+    pub fn start_headless() -> Self {
+        Self::start_with(|| {}, false)
+    }
+
+    fn start_with(notify: impl Fn() + Send + Sync + 'static, panels: bool) -> Self {
+        let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("tokio runtime");
+        let reg = Arc::new(yaist_modules::registry());
+        let ctx = Arc::new(Context::new());
+        let llm = LlmClient::new(LlmConfig::from_env());
+
+        let modules = reg
+            .modules
+            .iter()
+            .map(|m| ModuleView {
+                spec: *m,
+                panel: Panel::Loading,
+                actions: reg.module_actions(m.id).into_iter().filter(|a| a.id != m.overview && !m.row_actions.contains(&a.id)).collect(),
+                row_actions: m.row_actions.iter().filter_map(|id| reg.get(id).copied()).collect(),
+            })
+            .collect();
+        let distro_name = if ctx.distro.pretty.is_empty() { "this system".to_owned() } else { ctx.distro.pretty.clone() };
+        let mut conversation = vec![Entry::Notice(format!(
+            "yAIst on {distro_name}. Ask in plain language, type /help for commands, or work in the panels."
+        ))];
+        if !ctx.distro.is_opensuse() {
+            conversation.push(Entry::Error(format!("This doesn't look like openSUSE ({}); package and repository modules may not work.", ctx.distro.id)));
+        }
+        let state = Arc::new(Mutex::new(State {
+            distro: ctx.distro.clone(),
+            modules,
+            selected: 0,
+            conversation,
+            busy: None,
+            llm: LlmStatus::Checking,
+            llm_url: llm.config.url.clone(),
+        }));
+
+        let sh = Shared { reg: reg.clone(), ctx: ctx.clone(), state: state.clone(), notify: Arc::new(notify), panels };
+        let (tx, mut rx) = mpsc::unbounded_channel::<Cmd>();
+        let (job_tx, job_rx) = mpsc::unbounded_channel::<Cmd>();
+
+        // Panel loads run alongside whatever the agent is doing; everything
+        // else is handled in order.
+        let dispatch_sh = sh.clone();
+        runtime.spawn(async move {
+            while let Some(cmd) = rx.recv().await {
+                match cmd {
+                    Cmd::Refresh(i) => dispatch_sh.refresh(i),
+                    other => {
+                        let _ = job_tx.send(other);
+                    }
+                }
+            }
+        });
+
+        let agent = Agent::new(&reg, &ctx.distro, llm.clone());
+        let warm = agent.warmer();
+        runtime.spawn(Jobs { sh: sh.clone(), agent, pending: VecDeque::new(), call_ids: HashMap::new(), next_id: 1 }.run(job_rx));
+        runtime.spawn(watch_llm(sh.clone(), llm, warm));
+
+        let _ = tx.send(Cmd::Refresh(0));
+        Self { state, tx, registry: reg, _runtime: runtime }
+    }
+
+    pub fn state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn send(&self, cmd: Cmd) {
+        let _ = self.tx.send(cmd);
+    }
+
+    /// Selects a module, loading its panel the first time.
+    pub fn select(&self, index: usize) {
+        let load = {
+            let mut s = self.state();
+            if index >= s.modules.len() {
+                return;
+            }
+            s.selected = index;
+            !matches!(s.modules[index].panel, Panel::Ready(_))
+        };
+        if load {
+            self.send(Cmd::Refresh(index));
+        }
+    }
+}
+
+async fn watch_llm(sh: Shared, llm: LlmClient, warm: impl std::future::Future<Output = anyhow::Result<()>> + Send + 'static) {
+    let mut warm = Some(warm);
+    loop {
+        let status = match llm.model_name().await {
+            Ok(name) => LlmStatus::Ready(name),
+            Err(_) => LlmStatus::Offline,
+        };
+        let ready = matches!(status, LlmStatus::Ready(_));
+        let changed = sh.state.lock().map(|s| s.llm != status).unwrap_or(true);
+        if ready {
+            if let Some(w) = warm.take() {
+                // Warm the prompt cache before reporting ready, so the first
+                // request is as fast as the rest.
+                sh.update(|s| s.llm = LlmStatus::Checking);
+                let _ = w.await;
+            }
+        }
+        if changed || ready {
+            sh.update(|s| s.llm = status);
+        }
+        tokio::time::sleep(Duration::from_secs(if ready { 15 } else { 3 })).await;
+    }
+}
+
+struct Jobs {
+    sh: Shared,
+    agent: Agent,
+    /// Plans waiting for the user, oldest first.
+    pending: VecDeque<u64>,
+    /// Plan → the agent's tool call it answers.
+    call_ids: HashMap<u64, String>,
+    next_id: u64,
+}
+
+impl Jobs {
+    async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Cmd>) {
+        while let Some(cmd) = rx.recv().await {
+            match cmd {
+                Cmd::Submit(text) => self.submit(text.trim()).await,
+                Cmd::Propose { action, raw } => {
+                    self.cancel_all();
+                    match self.sh.reg.get(action).copied() {
+                        Some(spec) => {
+                            if let Ok(args) = spec.validate(&raw) {
+                                self.sh.push(Entry::Command(command::format(&spec, &args)));
+                            }
+                            self.invoke(spec, raw, None).await;
+                        }
+                        None => self.sh.push(Entry::Error(format!("unknown action {action}"))),
+                    }
+                }
+                Cmd::Confirm(id) => self.execute(id).await,
+                Cmd::Cancel(id) => self.cancel(id),
+                Cmd::Refresh(i) => self.sh.refresh(i),
+            }
+        }
+    }
+
+    async fn submit(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.cancel_all();
+        if text == "/clear" {
+            self.agent.clear();
+            self.sh.update(|s| s.conversation.clear());
+            return;
+        }
+        if text.starts_with('/') {
+            self.sh.push(Entry::Command(text.to_owned()));
+            match command::parse(&self.sh.reg, text) {
+                Ok(command::Parsed::Help(module)) => self.sh.push(Entry::Notice(command::help(&self.sh.reg, module.as_deref()))),
+                Ok(command::Parsed::Action { spec, raw }) => {
+                    self.invoke(spec, raw, None).await;
+                }
+                Err(e) => self.sh.push(Entry::Error(e.to_string())),
+            }
+            return;
+        }
+        self.sh.push(Entry::User(text.to_owned()));
+        self.agent_turn(text).await;
+    }
+
+    /// Runs a read action now, or turns a change into a plan card. Returns the
+    /// tool result for the agent when there is one already.
+    async fn invoke(&mut self, spec: ActionSpec, raw: Map<String, Value>, call_id: Option<String>) -> Option<String> {
+        let args = match spec.validate(&raw) {
+            Ok(a) => a,
+            Err(e) => {
+                if call_id.is_some() {
+                    return Some(format!("Error: {e}"));
+                }
+                self.sh.push(Entry::Error(e.to_string()));
+                return None;
+            }
+        };
+        let cmdline = command::format(&spec, &args);
+        if spec.risk == Risk::Read {
+            self.sh.busy(Some(format!("Running {}…", spec.title)));
+            let result = self.sh.reg.run(self.sh.ctx.clone(), spec.id, args).await;
+            self.sh.busy(None);
+            return match (result, call_id.is_some()) {
+                (Ok(out), true) => {
+                    self.sh.push(Entry::AgentRan { command: cmdline, ok: true });
+                    Some(out.to_llm_text(40))
+                }
+                (Err(e), true) => {
+                    self.sh.push(Entry::AgentRan { command: cmdline, ok: false });
+                    Some(format!("Error: {e:#}"))
+                }
+                (Ok(out), false) => {
+                    self.sh.push(Entry::Result { title: spec.title.to_owned(), output: out });
+                    None
+                }
+                (Err(e), false) => {
+                    self.sh.push(Entry::Error(format!("{}: {e:#}", spec.title)));
+                    None
+                }
+            };
+        }
+        let id = self.next_id;
+        self.next_id += 1;
+        let from_agent = call_id.is_some();
+        if let Some(c) = call_id {
+            self.call_ids.insert(id, c);
+        }
+        self.pending.push_back(id);
+        self.sh.push(Entry::Plan(Plan { id, spec, args, command: cmdline, status: PlanStatus::Pending, from_agent }));
+        self.sh.focus_module(spec.module());
+        None
+    }
+
+    async fn agent_turn(&mut self, text: &str) {
+        let started = Instant::now();
+        self.agent.push_user(text);
+        self.sh.busy(Some("Thinking…".into()));
+        for _ in 0..MAX_ROUNDS {
+            let reply = match self.agent.step().await {
+                Ok(r) => r,
+                Err(e) => {
+                    self.sh.push(Entry::Error(format!(
+                        "The local model is not reachable ({e:#}). Start it with scripts/llm-server.sh; /commands and panels work without it."
+                    )));
+                    break;
+                }
+            };
+            if !reply.content.is_empty() {
+                self.sh.push(Entry::Assistant { text: reply.content.clone(), elapsed: started.elapsed() });
+            }
+            if reply.tool_calls.is_empty() {
+                break;
+            }
+            let mut waiting = false;
+            for call in reply.tool_calls {
+                let Some(spec) = self.sh.reg.get(&action_id(&call.name)).copied() else {
+                    self.agent.push_tool_result(&call.id, &format!("Error: there is no tool called {}", call.name));
+                    continue;
+                };
+                let raw = match call.arguments {
+                    Ok(m) => m,
+                    Err(_) => {
+                        self.agent.push_tool_result(&call.id, "Error: the arguments were not valid JSON");
+                        continue;
+                    }
+                };
+                match self.invoke(spec, raw, Some(call.id.clone())).await {
+                    Some(result) => self.agent.push_tool_result(&call.id, &result),
+                    None => waiting = true,
+                }
+            }
+            // A plan card is up: the rest of the turn is the user's decision.
+            if waiting {
+                break;
+            }
+            self.sh.busy(Some("Thinking…".into()));
+        }
+        self.sh.busy(None);
+    }
+
+    async fn execute(&mut self, id: u64) {
+        let Some((spec, args)) = self.sh.update(|s| {
+            let p = s.plan_mut(id).filter(|p| p.status == PlanStatus::Pending)?;
+            p.status = PlanStatus::Running;
+            Some((p.spec, p.args.clone()))
+        }) else {
+            return;
+        };
+        self.pending.retain(|&p| p != id);
+        self.sh.busy(Some(format!("{}…", spec.title)));
+        let result = self.sh.reg.run(self.sh.ctx.clone(), spec.id, args).await;
+        self.sh.busy(None);
+        let (status, note) = match result {
+            Ok(out) => {
+                let line = out.headline();
+                (PlanStatus::Done(line.clone()), format!("Done: {line}"))
+            }
+            Err(e) => (PlanStatus::Failed(format!("{e:#}")), format!("Failed: {e:#}")),
+        };
+        self.sh.update(|s| {
+            if let Some(p) = s.plan_mut(id) {
+                p.status = status;
+            }
+        });
+        if let Some(call) = self.call_ids.remove(&id) {
+            self.agent.push_tool_result(&call, &note);
+        }
+        self.sh.focus_module(spec.module());
+    }
+
+    fn cancel(&mut self, id: u64) {
+        let was_pending = self.sh.update(|s| match s.plan_mut(id) {
+            Some(p) if p.status == PlanStatus::Pending => {
+                p.status = PlanStatus::Cancelled;
+                true
+            }
+            _ => false,
+        });
+        if was_pending {
+            self.pending.retain(|&p| p != id);
+            if let Some(call) = self.call_ids.remove(&id) {
+                self.agent.push_tool_result(&call, "The user cancelled this action. Do not retry it unless asked.");
+            }
+        }
+    }
+
+    /// A new request supersedes plans still waiting for an answer.
+    fn cancel_all(&mut self) {
+        for id in std::mem::take(&mut self.pending) {
+            self.cancel(id);
+        }
+    }
+}
