@@ -65,6 +65,11 @@ pub fn name(s: &str) -> R {
     Ok(())
 }
 
+/// Repository aliases, space separated (may be empty).
+pub fn names(s: &str) -> R {
+    s.split_whitespace().try_for_each(name)
+}
+
 /// Package names, space separated.
 pub fn packages(s: &str) -> R {
     if s.split_whitespace().next().is_none() {
