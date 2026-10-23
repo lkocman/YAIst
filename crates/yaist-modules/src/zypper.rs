@@ -18,20 +18,14 @@ pub async fn query(ctx: &Context, args: &[&str]) -> Result<String> {
     ctx.run_ok(&argv, OK).await
 }
 
-/// Runs a zypper command as root and returns the tail of its output. On a
-/// read-only root, a command zypper refuses is retried inside a transaction.
+/// Runs a zypper command as root and returns the tail of its output. Also on
+/// transactional systems for repository changes: /etc is writable there (an
+/// overlay), only package changes need a transaction.
 pub async fn change(ctx: &Context, args: &[&str]) -> Result<String> {
     let mut argv = vec!["/usr/bin/zypper", "--non-interactive"];
     argv.extend_from_slice(args);
-    match ctx.run_privileged_ok(&argv, OK).await {
-        Ok(out) => Ok(last_lines(out.trim(), 3)),
-        Err(e) if ctx.distro.transactional && e.to_string().to_ascii_lowercase().contains("read-only") => {
-            let mut targs = vec!["run", "/usr/bin/zypper", "--non-interactive"];
-            targs.extend_from_slice(args);
-            transactional(ctx, &targs).await
-        }
-        Err(e) => Err(e),
-    }
+    let out = ctx.run_privileged_ok(&argv, OK).await?;
+    Ok(last_lines(out.trim(), 3))
 }
 
 /// Changes on transactional systems go into a new snapshot that becomes
