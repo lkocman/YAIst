@@ -156,6 +156,34 @@ async fn pkg_op(ctx: &Context, op: &str, pkgs: &[&str]) -> Result<String> {
     }
 }
 
+/// How many updates are waiting, for the update banner and header badge.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UpdateCounts {
+    /// Packages with a newer version available.
+    pub packages: usize,
+    /// Needed security patches (Leap; rolling releases have no patches).
+    pub security: usize,
+}
+
+/// Counts available updates from the cached repository metadata (no root).
+pub async fn update_counts(ctx: &Context) -> Result<UpdateCounts> {
+    let xml = zypper::query(ctx, &["list-updates"]).await?;
+    let doc = zypper::parse(&xml)?;
+    let packages = doc.descendants().filter(|n| n.has_tag_name("update") && n.attribute("kind") == Some("package")).count();
+    let security = if ctx.distro.rolling {
+        0
+    } else {
+        // `--category security` doesn't filter the XML, so count ourselves.
+        let xml = zypper::query(ctx, &["list-patches"]).await?;
+        let doc = zypper::parse(&xml)?;
+        doc.descendants()
+            .filter(|n| n.has_tag_name("update") && n.attribute("kind") == Some("patch"))
+            .filter(|n| n.attribute("category") == Some("security") && n.attribute("status") == Some("needed"))
+            .count()
+    };
+    Ok(UpdateCounts { packages, security })
+}
+
 async fn updates(ctx: &Context) -> Result<Output> {
     let xml = zypper::query(ctx, &["list-updates"]).await?;
     let doc = zypper::parse(&xml)?;

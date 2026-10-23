@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 use yaist_agent::{action_id, Agent, LlmClient, LlmConfig};
 use yaist_core::{command, ActionSpec, Context, Registry, Risk};
 
-use crate::state::{Entry, LlmStatus, ModuleView, Panel, Plan, PlanStatus, State};
+use crate::state::{Entry, LlmStatus, ModuleView, Panel, Plan, PlanStatus, State, UpdateStatus};
 
 /// How many tool-calling rounds one request may take before we stop it.
 const MAX_ROUNDS: usize = 5;
@@ -27,6 +27,8 @@ pub enum Cmd {
     Cancel(u64),
     /// Reload a module's panel.
     Refresh(usize),
+    /// Count available updates again.
+    CheckUpdates,
 }
 
 #[derive(Clone)]
@@ -38,6 +40,7 @@ struct Shared {
     /// Headless sessions (`yaist ask`) load no panels: a panel load can ask
     /// polkit, and nobody is looking at it.
     panels: bool,
+    update_check: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Shared {
@@ -74,6 +77,28 @@ impl Shared {
                     Err(e) => Panel::Failed(format!("{e:#}")),
                 }
             });
+        });
+    }
+
+    /// Counts available updates in the background (skipped when one check
+    /// is already running, and in headless sessions).
+    fn check_updates(&self) {
+        if !self.panels || self.update_check.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        let sh = self.clone();
+        tokio::spawn(async move {
+            sh.update(|s| {
+                if !matches!(s.updates, UpdateStatus::Known { .. }) {
+                    s.updates = UpdateStatus::Checking;
+                }
+            });
+            let status = match yaist_modules::update_counts(&sh.ctx).await {
+                Ok(c) => UpdateStatus::Known { packages: c.packages, security: c.security, checked: Instant::now() },
+                Err(e) => UpdateStatus::Failed(format!("{e:#}")),
+            };
+            sh.update(|s| s.updates = status);
+            sh.update_check.store(false, std::sync::atomic::Ordering::SeqCst);
         });
     }
 
@@ -139,9 +164,11 @@ impl Session {
             busy: None,
             llm: LlmStatus::Checking,
             llm_url: llm.config.url.clone(),
+            updates: UpdateStatus::Checking,
         }));
 
-        let sh = Shared { reg: reg.clone(), ctx: ctx.clone(), state: state.clone(), notify: Arc::new(notify), panels };
+        let sh =
+            Shared { reg: reg.clone(), ctx: ctx.clone(), state: state.clone(), notify: Arc::new(notify), panels, update_check: Default::default() };
         let (tx, mut rx) = mpsc::unbounded_channel::<Cmd>();
         let (job_tx, job_rx) = mpsc::unbounded_channel::<Cmd>();
 
@@ -152,6 +179,7 @@ impl Session {
             while let Some(cmd) = rx.recv().await {
                 match cmd {
                     Cmd::Refresh(i) => dispatch_sh.refresh(i),
+                    Cmd::CheckUpdates => dispatch_sh.check_updates(),
                     other => {
                         let _ = job_tx.send(other);
                     }
@@ -163,6 +191,14 @@ impl Session {
         let warm = agent.warmer();
         runtime.spawn(Jobs { sh: sh.clone(), agent, pending: VecDeque::new(), call_ids: HashMap::new(), next_id: 1 }.run(job_rx));
         runtime.spawn(watch_llm(sh.clone(), llm, warm));
+        // Updates: now, then every 30 minutes.
+        let updates_sh = sh.clone();
+        runtime.spawn(async move {
+            loop {
+                updates_sh.check_updates();
+                tokio::time::sleep(Duration::from_secs(30 * 60)).await;
+            }
+        });
 
         let _ = tx.send(Cmd::Refresh(0));
         Self { state, tx, registry: reg, _runtime: runtime }
@@ -246,6 +282,7 @@ impl Jobs {
                 Cmd::Confirm(id) => self.execute(id).await,
                 Cmd::Cancel(id) => self.cancel(id),
                 Cmd::Refresh(i) => self.sh.refresh(i),
+                Cmd::CheckUpdates => self.sh.check_updates(),
             }
         }
     }
@@ -403,6 +440,9 @@ impl Jobs {
             self.agent.push_tool_result(&call, &note);
         }
         self.sh.focus_module(spec.module());
+        if matches!(spec.module(), "packages" | "repos" | "upgrade") {
+            self.sh.check_updates();
+        }
     }
 
     fn cancel(&mut self, id: u64) {

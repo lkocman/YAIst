@@ -4,7 +4,10 @@ use egui::{vec2, Color32, CornerRadius, FontId, Frame, Margin, RichText, Stroke,
 use serde_json::{Map, Value};
 use yaist_core::{Output, ParamKind, Risk, Table};
 use yaist_ui::welcome::{self, Start};
-use yaist_ui::{row_action_is_direct, row_args, tone_of, Cmd, Entry, Form, LlmStatus, ModuleView, Panel, Plan, PlanStatus, Session};
+use yaist_ui::{
+    row_action_is_direct, row_args, tone_of, update_summary, Cmd, Entry, Form, LlmStatus, ModuleView, Panel, Plan, PlanStatus, Session, UpdateLevel,
+    UpdateStatus, UPDATE_ACTION,
+};
 
 use crate::theme::{self, Tokens};
 use crate::widgets::{self, Kind};
@@ -21,6 +24,7 @@ enum Act {
     Confirm(u64),
     Cancel(u64),
     Submit(String),
+    CheckUpdates,
 }
 
 /// What one frame draws, copied out of the shared state so the backend isn't
@@ -35,6 +39,7 @@ struct View {
     distro: String,
     distro_info: yaist_core::Distro,
     pending: bool,
+    updates: UpdateStatus,
 }
 
 pub struct App {
@@ -109,6 +114,7 @@ impl App {
             distro: if s.distro.pretty.is_empty() { s.distro.id.clone() } else { s.distro.pretty.clone() },
             distro_info: s.distro.clone(),
             pending: s.pending_plan().is_some(),
+            updates: s.updates.clone(),
         }
     }
 
@@ -122,6 +128,7 @@ impl App {
                 Act::Confirm(id) => self.session.send(Cmd::Confirm(id)),
                 Act::Cancel(id) => self.session.send(Cmd::Cancel(id)),
                 Act::Submit(text) => self.session.send(Cmd::Submit(text)),
+                Act::CheckUpdates => self.session.send(Cmd::CheckUpdates),
             }
         }
     }
@@ -178,6 +185,8 @@ impl App {
             widgets::tag(ui, "System", t.invert_bg, t.invert_fg);
             ui.add_space(12.0);
             widgets::hud(ui, &v.distro, t.muted);
+            ui.add_space(16.0);
+            self.update_badge(ui, v);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 widgets::window_buttons(ui, theme::HEADER_H);
                 let dark = ui.ctx().theme() == egui::Theme::Dark;
@@ -320,6 +329,10 @@ impl App {
             }
         });
         ui.add_space(18.0);
+        if m.spec.id == "packages" {
+            self.update_banner(ui, v, false);
+            ui.add_space(18.0);
+        }
 
         match &m.panel {
             Panel::Loading => {
@@ -452,6 +465,8 @@ impl App {
                     );
                 });
             });
+            ui.add_space(18.0);
+            self.update_banner(ui, v, true);
             ui.add_space(22.0);
 
             widgets::eyebrow(ui, "01", "Get started");
@@ -539,6 +554,80 @@ impl App {
             }
             ui.add_space(24.0);
         });
+    }
+
+    /// Header badge: solid and coloured while updates wait, so it is seen
+    /// from every screen; opens Packages.
+    fn update_badge(&mut self, ui: &mut Ui, v: &View) {
+        let t = Tokens::get(ui.ctx());
+        let (level, badge, ..) = update_summary(&v.updates);
+        let resp = match level {
+            UpdateLevel::Security => widgets::tag(ui, &badge, t.bad, t.invert_fg),
+            UpdateLevel::Available => widgets::tag(ui, &badge, t.warn, t.invert_fg),
+            UpdateLevel::UpToDate => widgets::badge(ui, &badge, t.good),
+            UpdateLevel::Unknown => widgets::badge(ui, &badge, t.faint),
+        };
+        let resp = resp.interact(egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Open Packages");
+        if resp.clicked() {
+            if let Some(i) = v.modules.iter().position(|m| m.spec.id == "packages") {
+                self.acts.push(Act::Select(i));
+            }
+        }
+    }
+
+    /// The update banner: large and coloured when updates wait, a quiet line
+    /// when the system is up to date.
+    fn update_banner(&mut self, ui: &mut Ui, v: &View, with_list_button: bool) {
+        let t = Tokens::get(ui.ctx());
+        let (level, _, headline, detail) = update_summary(&v.updates);
+        let colour = match level {
+            UpdateLevel::Security => t.bad,
+            UpdateLevel::Available => t.warn,
+            UpdateLevel::UpToDate => t.good,
+            UpdateLevel::Unknown => t.faint,
+        };
+        let big = matches!(level, UpdateLevel::Available | UpdateLevel::Security);
+        let pad = if big { 18 } else { 12 };
+        let frame = Frame::new().fill(t.sunken).stroke(t.hairline()).inner_margin(Margin { left: 20, right: 16, top: pad, bottom: pad });
+        let resp = frame.show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            if big {
+                widgets::hud(ui, if level == UpdateLevel::Security { "security updates" } else { "updates" }, colour);
+                ui.add_space(2.0);
+                ui.label(RichText::new(&headline).font(FontId::new(24.0, theme::display())).color(t.ink_strong));
+                ui.label(RichText::new(&detail).size(13.0).color(t.muted));
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    if widgets::button(ui, "Install updates", Kind::Primary, 160.0).clicked() {
+                        self.acts.push(Act::Propose(UPDATE_ACTION, Map::new()));
+                    }
+                    if with_list_button && widgets::button(ui, "See list", Kind::Secondary, 0.0).clicked() {
+                        if let Some(i) = v.modules.iter().position(|m| m.spec.id == "packages") {
+                            self.acts.push(Act::Select(i));
+                        }
+                    }
+                });
+            } else {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new(&headline).family(theme::semibold()).size(15.0).color(t.ink_strong));
+                        if !detail.is_empty() {
+                            ui.label(RichText::new(&detail).size(13.0).color(t.muted));
+                        }
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let can_check = !matches!(v.updates, UpdateStatus::Checking);
+                        if can_check && widgets::button_sized(ui, "Check again", Kind::Secondary, 0.0, 28.0).clicked() {
+                            self.acts.push(Act::CheckUpdates);
+                        }
+                    });
+                });
+            }
+        });
+        // A coloured rail down the left edge.
+        let r = resp.response.rect;
+        ui.painter().rect_filled(egui::Rect::from_min_size(r.min, vec2(4.0, r.height())), CornerRadius::ZERO, colour);
     }
 
     fn start(&mut self, start: Start, v: &View) {

@@ -73,6 +73,24 @@ pub enum Entry {
     Notice(String),
 }
 
+/// The result of the background update check.
+#[derive(Clone, Debug)]
+pub enum UpdateStatus {
+    Checking,
+    Known { packages: usize, security: usize, checked: std::time::Instant },
+    Failed(String),
+}
+
+impl UpdateStatus {
+    /// Updates waiting (packages, security patches), if known.
+    pub fn pending(&self) -> Option<(usize, usize)> {
+        match self {
+            UpdateStatus::Known { packages, security, .. } => Some((*packages, *security)),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum LlmStatus {
     Checking,
@@ -89,6 +107,7 @@ pub struct State {
     pub busy: Option<String>,
     pub llm: LlmStatus,
     pub llm_url: String,
+    pub updates: UpdateStatus,
 }
 
 impl State {

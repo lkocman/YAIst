@@ -15,6 +15,7 @@ use yaist_core::{ActionSpec, Output, ParamKind, Risk};
 use yaist_ui::palette::{Rgb, Tokens};
 use yaist_ui::welcome::{self, Start};
 use yaist_ui::{row_action_is_direct, row_args, tone_of, Cmd, Entry, Form, LlmStatus, Panel, PlanStatus, Session, State};
+use yaist_ui::{update_summary, UpdateLevel, UPDATE_ACTION};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -84,7 +85,8 @@ pub fn snapshot(inputs: &[String], width: u16, height: u16) -> Result<()> {
         for _ in 0..200 {
             std::thread::sleep(Duration::from_millis(100));
             let s = app.session.state();
-            if s.busy.is_none() && s.llm != LlmStatus::Checking && !matches!(s.modules[s.selected].panel, Panel::Loading) {
+            let updates_done = !matches!(s.updates, yaist_ui::UpdateStatus::Checking);
+            if s.busy.is_none() && s.llm != LlmStatus::Checking && updates_done && !matches!(s.modules[s.selected].panel, Panel::Loading) {
                 break;
             }
         }
@@ -260,6 +262,10 @@ impl App {
             KeyCode::Left => self.focus = Focus::Modules,
             KeyCode::Enter => self.open_menu(true),
             KeyCode::Char('a') => self.open_menu(false),
+            KeyCode::Char('u') => {
+                self.session.send(Cmd::Propose { action: UPDATE_ACTION, raw: Default::default() });
+                self.focus = Focus::Input;
+            }
             KeyCode::Char('r') => {
                 let i = self.session.state().selected;
                 self.session.send(Cmd::Refresh(i));
@@ -509,6 +515,8 @@ impl App {
             self.tag("system", t.invert_bg),
             Span::raw(" "),
             self.hud(&s.distro.pretty, t.muted),
+            Span::raw("  "),
+            self.update_badge(s),
         ]);
         let right = Line::from(vec![llm, Span::raw(" ")]).right_aligned();
         let block = Block::new().borders(Borders::BOTTOM).border_style(self.style(t.line)).style(self.style(t.ink));
@@ -560,14 +568,15 @@ impl App {
         }
         let [head, buttons, content] = Layout::vertical([Constraint::Length(2), Constraint::Length(2), Constraint::Min(1)]).areas(inner);
 
-        f.render_widget(
-            Paragraph::new(vec![Line::from(vec![
-                Span::styled(format!(" {}", m.spec.title), self.style(t.ink_strong).add_modifier(Modifier::BOLD)),
-                Span::styled("  ", self.style(t.ink)),
-                Span::styled(m.spec.tagline.to_owned(), self.style(t.muted)),
-            ])]),
-            head,
-        );
+        let mut head_lines = vec![Line::from(vec![
+            Span::styled(format!(" {}", m.spec.title), self.style(t.ink_strong).add_modifier(Modifier::BOLD)),
+            Span::styled("  ", self.style(t.ink)),
+            Span::styled(m.spec.tagline.to_owned(), self.style(t.muted)),
+        ])];
+        if m.spec.id == "packages" {
+            head_lines.push(self.update_line(s));
+        }
+        f.render_widget(Paragraph::new(head_lines), head);
 
         let mut spans = vec![Span::raw(" ")];
         for a in &m.actions {
@@ -633,6 +642,46 @@ impl App {
         }
     }
 
+    fn update_colour(&self, level: UpdateLevel) -> Rgb {
+        match level {
+            UpdateLevel::Security => self.t.bad,
+            UpdateLevel::Available => self.t.warn,
+            UpdateLevel::UpToDate => self.t.good,
+            UpdateLevel::Unknown => self.t.faint,
+        }
+    }
+
+    /// Solid and coloured while updates wait, so it is seen on every screen.
+    fn update_badge(&self, s: &State) -> Span<'static> {
+        let (level, badge, ..) = update_summary(&s.updates);
+        let colour = self.update_colour(level);
+        match level {
+            UpdateLevel::Available | UpdateLevel::Security => self.tag(&badge.to_uppercase(), colour),
+            _ => self.badge(&badge, colour),
+        }
+    }
+
+    /// The update banner as one line: a coloured rail, the headline, detail
+    /// and the key to install.
+    fn update_line(&self, s: &State) -> Line<'static> {
+        let t = &self.t;
+        let (level, _, headline, detail) = update_summary(&s.updates);
+        let colour = self.update_colour(level);
+        let mut spans = vec![
+            Span::styled(" ▌", self.style(colour)),
+            Span::styled(
+                format!("{headline}  "),
+                self.style(if level == UpdateLevel::Unknown { t.muted } else { t.ink_strong }).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(detail, self.style(t.muted)),
+        ];
+        if matches!(level, UpdateLevel::Available | UpdateLevel::Security) {
+            spans.push(Span::raw("  "));
+            spans.push(Span::styled(" [U] INSTALL UPDATES ", Style::new().fg(c(t.invert_fg)).bg(c(t.invert_bg)).add_modifier(Modifier::BOLD)));
+        }
+        Line::from(spans)
+    }
+
     fn draw_welcome(&self, f: &mut Frame, area: Rect, s: &State, cursor: &mut TableState) {
         let t = self.t;
         let d = &s.distro;
@@ -652,6 +701,8 @@ impl App {
             }
             lines.push(Line::from(spans));
         }
+        lines.push(Line::from(""));
+        lines.push(self.update_line(s));
         lines.push(Line::from(""));
         lines.push(Line::from(vec![Span::raw(" "), self.hud("01 / get started", t.faint), self.hud("   ↑↓ choose · enter start", t.faint)]));
         let items = welcome::start_items(d);
@@ -924,7 +975,7 @@ impl App {
         } else {
             match self.focus {
                 Focus::Modules => "↑↓ module · enter open · tab focus · ctrl-q quit",
-                Focus::Panel => "↑↓ row · enter row actions · a module actions · r refresh · tab focus",
+                Focus::Panel => "↑↓ row · enter row actions · a module actions · u install updates · r refresh · tab focus",
                 Focus::Input => "enter send · ↑ history · pgup/pgdn scroll · tab focus · ctrl-q quit",
             }
         };

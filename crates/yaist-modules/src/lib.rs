@@ -13,6 +13,7 @@ mod upgrade;
 mod users;
 mod zypper;
 
+pub use packages::{update_counts, UpdateCounts};
 use yaist_core::{ModuleSpec, Registry};
 
 /// All modules, in sidebar order.
